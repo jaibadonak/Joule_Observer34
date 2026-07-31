@@ -1,0 +1,65 @@
+# ── Atmel / Microchip Studio ──────────────────────────────────
+# Keep .cproj .atsln and src/. Everything below is build output.
+[Dd]ebug/
+[Rr]elease/
+*.o
+*.d
+*.elf
+*.eep
+*.map
+*.lss
+*.srec
+*.obj
+*.componentinfo.xml
+.vs/
+
+# ── LTspice ───────────────────────────────────────────────────
+# Keep .asc .asy .lib .sub. Raw waveform data is huge and regenerable.
+*.raw
+*.op.raw
+*.fft
+*.net
+*.log
+
+# ── Proteus VSM ───────────────────────────────────────────────
+# Keep .pdsprj
+*.pwi
+*.SDF
+Debug.log
+Last Loaded*.DBK
+
+# ── Altium ────────────────────────────────────────────────────
+# Keep .PrjPcb .SchDoc .PcbDoc .SchLib .PcbLib .OutJob
+History/
+__Previews/
+Project Logs*/
+Project Outputs*/
+*.PrjPcbStructure
+*.SchDocPreview
+*.PcbDocPreview
+*.~(*)
+*.$$$
+*.Bak
+
+# ── MATLAB ────────────────────────────────────────────────────
+# Keep .m and .mlapp
+*.asv
+*.mex*
+slprj/
+
+# ── CAD ───────────────────────────────────────────────────────
+*.f3d.bak
+*.SLDPRT.bak
+
+# ── Python (test harness) ─────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ── OS and archive cruft ──────────────────────────────────────
+.DS_Store
+__MACOSX/
+Thumbs.db
+desktop.ini

@@ -6,6 +6,15 @@
 #   bash setup-issues.sh --dry-run     # prints the plan week by week
 #   bash setup-issues.sh               # actually creates them
 #
+# Cleaning up after a partial or bad run:
+#   bash setup-issues.sh --list-mine   # show what this script created
+#   bash setup-issues.sh --close-all   # close them (works with write access)
+#   bash setup-issues.sh --delete-all  # permanently delete (needs repo admin)
+#   bash setup-issues.sh --wipe-labels # also remove the labels and milestones
+#
+# The wipe modes only touch issues carrying one of this script's own labels,
+# so anything you or a TA raised by hand survives.
+#
 # Fill in the four usernames first. Re-running creates duplicates.
 #
 # THERE IS ONE BOARD. Labs 1 and 3 hand you the whole analogue circuit;
@@ -19,14 +28,96 @@
 set -uo pipefail
 
 # ---- who's who (GitHub usernames, no @) --------------------------
-AN="jaibadonak"     # Jai   - analogue + PCB
-FW="hbal601"     #Emre       - DSP + core firmware
-PE="usch143-svg"     #Uzayr       - peripherals, comms, app
-TE="nniz862-cyber"     #Noah       - integration, test, enclosure
+AN=""     # Jai   - analogue + PCB
+FW=""     #       - DSP + core firmware
+PE=""     #       - peripherals, comms, app
+TE=""     #       - integration, test, enclosure
 ALL="$AN,$FW,$PE,$TE"
 
-DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
+DRY=0; MODE=create
+case "${1:-}" in
+  --dry-run)     DRY=1 ;;
+  --list-mine)   MODE=list ;;
+  --close-all)   MODE=close ;;
+  --delete-all)  MODE=delete ;;
+  --wipe-labels) MODE=wipelabels ;;
+  "")            ;;
+  *) echo "unknown option: $1"; exit 1 ;;
+esac
 declare -A TALLY; TOTAL=0
+
+# Every label this script ever creates. Used to find our own issues.
+OURS='^(area:(analogue|firmware|pcb|app|test|admin|emulator)|blocked|decision|assessed|everyone|as-taught|improvement|wk0[2-9]|wk1[0-2]|brk)$'
+
+mine() {
+  gh issue list --state all --limit 1000 --json number,title,labels \
+     --jq ".[] | select(any(.labels[].name; test(\"$OURS\"))) | \"\(.number)\t\(.title)\""
+}
+
+confirm() {  # confirm <word> <what>
+  if [ "${FORCE:-0}" = "1" ]; then return 0; fi
+  echo
+  echo "About to $2."
+  printf 'Type %s to continue: ' "$1"
+  read -r ans
+  [ "$ans" = "$1" ] || { echo "aborted"; exit 1; }
+}
+
+if [ "$MODE" != "create" ]; then
+  command -v gh >/dev/null || { echo "gh CLI not found"; exit 1; }
+  gh repo view >/dev/null 2>&1 || { echo "not inside a GitHub repo"; exit 1; }
+
+  LIST="$(mine)"
+  N=$(printf '%s' "$LIST" | grep -c . || true)
+
+  if [ "$MODE" = "list" ]; then
+    echo "$LIST"; echo; echo "$N issues carry this script's labels."; exit 0
+  fi
+
+  if [ "$N" -eq 0 ]; then
+    echo "No issues with this script's labels. Nothing to do."
+  else
+    echo "$LIST" | head -5; [ "$N" -gt 5 ] && echo "   ... and $((N-5)) more"
+  fi
+
+  case "$MODE" in
+    close)
+      [ "$N" -gt 0 ] && {
+        confirm CLOSE "close $N issues (reversible)"
+        printf '%s\n' "$LIST" | while IFS=$'\t' read -r num _; do
+          [ -n "$num" ] && gh issue close "$num" >/dev/null 2>&1 && echo "  closed #$num"
+        done; }
+      ;;
+    delete|wipelabels)
+      [ "$N" -gt 0 ] && {
+        confirm DELETE "PERMANENTLY DELETE $N issues (needs repo admin, cannot be undone)"
+        printf '%s\n' "$LIST" | while IFS=$'\t' read -r num _; do
+          [ -n "$num" ] && { gh issue delete "$num" --yes >/dev/null 2>&1 \
+            && echo "  deleted #$num" \
+            || echo "  FAILED #$num (need repo admin? try --close-all)"; }
+        done; }
+      ;;
+  esac
+
+  if [ "$MODE" = "wipelabels" ]; then
+    echo "removing milestones"
+    for m in progress-review analogue-freeze pcb-submission firmware-complete \
+             bring-up characterisation final-demo; do
+      num=$(gh api "repos/{owner}/{repo}/milestones?state=all" --paginate \
+            --jq ".[] | select(.title==\"$m\") | .number" 2>/dev/null | head -1)
+      [ -n "$num" ] && gh api -X DELETE "repos/{owner}/{repo}/milestones/$num" \
+        >/dev/null 2>&1 && echo "  removed milestone $m"
+    done
+    echo "removing labels"
+    gh label list --limit 200 --json name --jq ".[].name | select(test(\"$OURS\"))" \
+      2>/dev/null | while read -r l; do
+        [ -n "$l" ] && gh label delete "$l" --yes >/dev/null 2>&1 && echo "  removed label $l"
+      done
+  fi
+
+  echo; echo "Done. Re-run without arguments to recreate."
+  exit 0
+fi
 
 mk() {  # mk <wk> <milestone> <labels> <assignees,csv> <title> [body]
   local wk="$1" ms="$2" lb="$3" as="$4" ti="$5" bd="${6:-}"

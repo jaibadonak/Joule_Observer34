@@ -10,6 +10,7 @@ on:
         options:
           - dry-run
           - create
+          - sync
           - list-mine
           - close-all
           - delete-all
@@ -34,6 +35,7 @@ jobs:
           case "${{ inputs.mode }}" in
             dry-run)     bash setup-issues.sh --dry-run ;;
             create)      bash setup-issues.sh ;;
+            sync)        bash setup-issues.sh --sync ;;
             list-mine)   bash setup-issues.sh --list-mine ;;
             close-all)   bash setup-issues.sh --close-all ;;
             delete-all)  bash setup-issues.sh --delete-all ;;

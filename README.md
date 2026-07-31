@@ -1,4 +1,4 @@
-# ELECTENG 209 — Team [XX] — Smart Energy Monitor
+# ELECTENG 209; Team [34]; Smart Energy Monitor(Joule Observer)
 
 Measures voltage, current and power delivered to a variable AC load, displays it locally and streams it to a phone.
 
@@ -20,7 +20,7 @@ Entering the **Smart Energy Challenge**: SMT board carrying its own ATmega328PB 
 
 | Member | GitHub | Subsystem |
 |---|---|---|
-| [Jai] | @ | Analogue front end, power supply, PCB |
+| [Jai] | @jaibadonak | Analogue front end, power supply, PCB |
 | [ ] | @ | DSP / core firmware |
 | [ ] | @ | Peripherals — UART, display, ESP32, app |
 | [ ] | @ | Integration, test, enclosure |
@@ -73,4 +73,4 @@ There is **one board**. Labs 1 and 3 give us the whole analogue circuit; the cha
 
 Individual lab repos are separate. Collaborate freely, keep answers and commits your own.
 
-Task board: Issues are grouped by `wk:NN` label. Run `setup-issues.sh --dry-run` to see the full plan.
+Task board: Issues are grouped by `wk:NN` label.

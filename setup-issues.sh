@@ -35,10 +35,10 @@
 set -uo pipefail
 
 # ---- who's who (GitHub usernames, no @) --------------------------
-AN=""     # Jai   - analogue + PCB
-FW=""     #       - DSP + core firmware
-PE=""     #       - peripherals, comms, app
-TE=""     #       - integration, test, enclosure
+AN="jaibadonak"     # Jai   - analogue + PCB
+FW="hbal601"     #Emre       - DSP + core firmware
+PE="nniz862-cyber"     #Noah       - peripherals, comms, app
+TE="usch143-svg"     #Uzayr       - integration, test, enclosure
 ALL="$AN,$FW,$PE,$TE"
 
 DRY=0; MODE=create

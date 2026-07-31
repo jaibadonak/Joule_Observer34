@@ -6,6 +6,13 @@
 #   bash setup-issues.sh --dry-run     # prints the plan week by week
 #   bash setup-issues.sh               # actually creates them
 #
+# Changed who owns what? Edit the usernames above, then:
+#   bash setup-issues.sh --sync        # reassigns existing issues in place
+#
+# Sync matches on issue title, so it only works on cards it created and whose
+# titles have not been edited. It also refreshes the milestone and labels.
+# Nothing is deleted and no issue numbers change.
+#
 # Cleaning up after a partial or bad run:
 #   bash setup-issues.sh --list-mine   # show what this script created
 #   bash setup-issues.sh --close-all   # close them (works with write access)
@@ -37,6 +44,7 @@ ALL="$AN,$FW,$PE,$TE"
 DRY=0; MODE=create
 case "${1:-}" in
   --dry-run)     DRY=1 ;;
+  --sync)        MODE=sync ;;
   --list-mine)   MODE=list ;;
   --close-all)   MODE=close ;;
   --delete-all)  MODE=delete ;;
@@ -44,7 +52,8 @@ case "${1:-}" in
   "")            ;;
   *) echo "unknown option: $1"; exit 1 ;;
 esac
-declare -A TALLY; TOTAL=0
+declare -A TALLY ISSUE_NUM ISSUE_ASG
+TOTAL=0; SYNC_CHANGED=0; SYNC_SAME=0; SYNC_MISSING=0
 
 # Every label this script ever creates. Used to find our own issues.
 OURS='^(area:(analogue|firmware|pcb|app|test|admin|emulator)|blocked|decision|assessed|everyone|as-taught|improvement|wk0[2-9]|wk1[0-2]|brk)$'
@@ -52,6 +61,14 @@ OURS='^(area:(analogue|firmware|pcb|app|test|admin|emulator)|blocked|decision|as
 mine() {
   gh issue list --state all --limit 1000 --json number,title,labels \
      --jq ".[] | select(any(.labels[].name; test(\"$OURS\"))) | \"\(.number)\t\(.title)\""
+}
+
+build_map() {   # title -> issue number and current assignees
+  while IFS=$'\t' read -r num title asg; do
+    [ -n "$title" ] && { ISSUE_NUM["$title"]="$num"; ISSUE_ASG["$title"]="$asg"; }
+  done < <(gh issue list --state all --limit 1000 \
+      --json number,title,assignees,labels \
+      --jq ".[] | select(any(.labels[].name; test(\"$OURS\"))) | \"\(.number)\t\(.title)\t\(([.assignees[].login]|sort|join(\",\")))\"")
 }
 
 confirm() {  # confirm <word> <what>
@@ -63,7 +80,7 @@ confirm() {  # confirm <word> <what>
   [ "$ans" = "$1" ] || { echo "aborted"; exit 1; }
 }
 
-if [ "$MODE" != "create" ]; then
+if [ "$MODE" != "create" ] && [ "$MODE" != "sync" ]; then
   command -v gh >/dev/null || { echo "gh CLI not found"; exit 1; }
   gh repo view >/dev/null 2>&1 || { echo "not inside a GitHub repo"; exit 1; }
 
@@ -129,12 +146,51 @@ mk() {  # mk <wk> <milestone> <labels> <assignees,csv> <title> [body]
     [ -n "$w" ] && args+=(--assignee "$w") && TALLY[$w]=$(( ${TALLY[$w]:-0} + 1 ))
   done
   TOTAL=$((TOTAL+1))
+
+  if [ "$MODE" = "sync" ]; then
+    local num="${ISSUE_NUM[$ti]:-}"
+    if [ -z "$num" ]; then
+      SYNC_MISSING=$((SYNC_MISSING+1)); echo "   ?  no match: $ti"; return
+    fi
+    local want have add rem
+    want=$(printf '%s\n' "${who[@]}" | grep -v '^$' | sort -u | paste -sd, -)
+    have="${ISSUE_ASG[$ti]}"
+    if [ "$want" = "$have" ]; then SYNC_SAME=$((SYNC_SAME+1)); return; fi
+    local eargs=(--milestone "$ms" --add-label "$lb,$wk")
+    IFS=',' read -ra add <<< "$want"
+    for a in "${add[@]}"; do
+      [ -n "$a" ] && [[ ",$have," != *",$a,"* ]] && eargs+=(--add-assignee "$a")
+    done
+    IFS=',' read -ra rem <<< "$have"
+    for r in "${rem[@]}"; do
+      [ -n "$r" ] && [[ ",$want," != *",$r,"* ]] && eargs+=(--remove-assignee "$r")
+    done
+    if gh issue edit "$num" "${eargs[@]}" >/dev/null 2>&1; then
+      SYNC_CHANGED=$((SYNC_CHANGED+1))
+      echo "   ~  #$num  ${have:-none} -> ${want:-none}   $ti"
+    else
+      echo "   !  #$num edit failed: $ti"
+    fi
+    return
+  fi
+
   if [ "$DRY" = 1 ]; then printf '   %s\n' "$ti"
   else gh issue create "${args[@]}" >/dev/null && echo "   + $ti"; fi
 }
 wk() { echo; echo "### $*"; }
 
-if [ "$DRY" = 0 ]; then
+if [ "$MODE" = "sync" ]; then
+  command -v gh >/dev/null || { echo "gh CLI not found"; exit 1; }
+  gh repo view >/dev/null 2>&1 || { echo "not inside a GitHub repo"; exit 1; }
+  for u in "$AN" "$FW" "$PE" "$TE"; do
+    [ -z "$u" ] && { echo "Fill in all four usernames before syncing."; exit 1; }
+  done
+  echo "reading existing issues..."
+  build_map
+  echo "found ${#ISSUE_NUM[@]} issues created by this script"
+fi
+
+if [ "$DRY" = 0 ] && [ "$MODE" = "create" ]; then
   command -v gh >/dev/null || { echo "gh CLI not found"; exit 1; }
   gh repo view >/dev/null 2>&1 || { echo "not inside a GitHub repo"; exit 1; }
   echo "== labels =="
@@ -404,6 +460,15 @@ mk wk12 final-demo "area:admin" "$TE" "Tag main as final-demo"
 mk wk12 final-demo "area:admin" "$TE" "Return the team toolkit to the Component Dispensary"
 
 # =================================================================
+if [ "$MODE" = "sync" ]; then
+  echo
+  echo "=== sync ==="
+  echo "  reassigned : $SYNC_CHANGED"
+  echo "  unchanged  : $SYNC_SAME"
+  echo "  no match   : $SYNC_MISSING"
+  [ "$SYNC_MISSING" -gt 0 ] && echo "  (cards whose titles were edited, or that were never created)"
+fi
+
 echo
 echo "=== workload split ==="
 for k in "$AN|analogue+PCB" "$FW|firmware/DSP" "$PE|peripherals/app" "$TE|test/integration"; do

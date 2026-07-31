@@ -25,7 +25,6 @@ Owning a block means you build it and you're the first person someone asks about
 
 **Say something the same day you get stuck.** Not next standup, not next week. Quietly falling behind is the only thing that actually breaks a project like this, and it's fixable if we hear about it early.
 
-**Turn up to standup.** Fifteen minutes, [day and time]. Done, next, blocked. If you can't make it, post your three lines in Slack.
 
 **Push before every assessment.** Lab repos and the team repo. Assessors mark off GitHub, not off our laptops.
 

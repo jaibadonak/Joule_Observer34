@@ -19,10 +19,10 @@
 set -uo pipefail
 
 # ---- who's who (GitHub usernames, no @) --------------------------
-AN=""     # Jai   - analogue + PCB
-FW=""     #       - DSP + core firmware
-PE=""     #       - peripherals, comms, app
-TE=""     #       - integration, test, enclosure
+AN="jaibadonak"     # Jai   - analogue + PCB
+FW="hbal601"     #Emre       - DSP + core firmware
+PE="usch143-svg"     #Uzayr       - peripherals, comms, app
+TE="nniz862-cyber"     #Noah       - integration, test, enclosure
 ALL="$AN,$FW,$PE,$TE"
 
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
@@ -98,8 +98,12 @@ mk wk02 progress-review "area:admin,everyone,assessed" "$ALL" "LAB 1 assessment:
 # =================================================================
 wk "WEEK 3  |  3-7 Aug  |  decisions and library"
 mk wk03 progress-review "area:admin,everyone" "$ALL" "Instrumentation workshop, 4-5 Aug"
-mk wk03 analogue-freeze "area:analogue,decision" "$AN" "DECIDE: op-amp, LT6221 for the signal chain" \
-  "LM324 on a single 5 V supply only swings to about V+ minus 1.5, so 3.5 V, with the same input common mode limit. The emulator A0 setting peaks near 4.1 V and would clip. LT6221 is rail to rail in and out. Keep the LM324 for the zero-cross comparator where headroom doesn't matter."
+mk wk03 analogue-freeze "area:analogue,decision" "$AN" "Op-amp: LT6221 for the signal chain, confirmed available for SMT" \
+  "Duleepa confirmed LT6221 is usable if we do the SMT design, pending a stock check. Rail to rail in and out, so the LM324 headroom limit that forces the 2.1 V offset disappears. Two consequences to budget: it is a DUAL not a quad, so four op-amps means two packages, and it draws about 3.3 mA per amplifier against the LM324 at 0.4 mA, roughly 12 mA more and another 0.16 W in an already tight regulator. Option: LT6221 for the two differential amps where noise and headroom matter, LM324 for the offset buffer and zero-cross where neither does. Noise is a clear win either way, 7 nV/rtHz against 35."
+mk wk03 analogue-freeze "area:analogue,improvement" "$AN" "IMPROVEMENT: re-centre the offset now that we are rail to rail" \
+  "The 2.1 V offset exists only because of LM324 VOH/VOL. With LT6221 the centre moves to mid-reference and nearly the whole range becomes usable. Paired with a 4.096 V LM4040 and a 2.048 V offset, design for about 4 Vpk-pk at full load and we use roughly 98% of the ADC range against the as-taught 40%. That is about 2.4x more counts, call it 1.3 bits, for free. Leave about 15% headroom so a +10% supply does not clip. Recompute both differential amp gains for the new swing. USE IT OR LOSE IT: schematic change, must land before the 1 Sep freeze."
+mk wk03 progress-review "area:analogue,as-taught" "$AN" "Answer Lab 3 Q1.3 and Q1.4 with LM324 numbers regardless" \
+  "The lab is individually marked against the LM324 datasheet and the 2.1 V derivation. Answer it as taught, then document the LT6221 swap separately as a project improvement. Do not deviate in the compulsory column."
 mk wk03 analogue-freeze "area:analogue,as-taught" "$AN" "Shunt value from Lab 1 Q3.1, then its SMT implementation" \
   "Lab caps shunt dissipation at 200 mW. Max current is 595 mA RMS (7.5 VA at 12.6 V), so 0.5 ohm gives 177 mW and 421 mV peak. Lab suggests two 1 ohm resistors in parallel, which carries straight to SMT: two ERJ-6ENF 1R 0805 in parallel is 0.5 ohm at 88 mW each, inside the 125 mW package limit. The parallel pair was always about splitting dissipation, not just hitting the value."
 mk wk03 analogue-freeze "area:pcb,decision" "$PE" "DECIDE: USB-serial bridge part" \
@@ -112,6 +116,10 @@ mk wk03 analogue-freeze "area:firmware,decision" "$FW" "DECIDE: debugWIRE or ISP
   "Probably already settled: the provided programmer is an AVRISP mkII, which is ISP only. Confirm nothing else is available before designing RESET."
 mk wk03 analogue-freeze "area:pcb" "$FW" "Map USART1 pinout vs SPI0 and ISP conflict" \
   "The PB has two USARTs, which is why the challenge specifies it. USART1 overlaps SPI0 and the programming pins. Decide how the 595 gets clocked: hardware SPI or bit bang on spare GPIO."
+mk wk03 analogue-freeze "area:pcb,decision" "$AN" "Confirm Altium 365 workspace access for all four" \
+  "Ask at the week 5 workshop, or a TA sooner. A shared workspace gives real check-out locking and managed library components, which matters because four of us are drawing footprints and .PcbLib files do not merge. If the licence only gives a personal workspace, fall back to one library file per person merged later. Decide before library work starts."
+mk wk03 analogue-freeze "area:pcb" "$AN" "Set up the Altium project and library structure in the workspace" \
+  "Blocked by the workspace question above."
 mk wk03 analogue-freeze "area:pcb" "$FW" "Library: ATmega328PB TQFP32"
 mk wk03 analogue-freeze "area:pcb" "$AN" "Library: LM4040-4.096"
 mk wk03 analogue-freeze "area:pcb" "$AN" "Library: current shunt with 4-terminal Kelvin pads" \
@@ -143,7 +151,7 @@ mk wk04 progress-review "area:analogue,as-taught" "$AN" "Two differential amplif
 mk wk04 progress-review "area:analogue,as-taught" "$AN" "Anti-alias filters, Lab 3 Part 4, and the per-channel Nyquist catch" \
   "Lab says put the corner below 5 kHz, which assumes the 10 kHz ADC rate. But we alternate V and I through one mux, so each channel is only sampled at about 4.8 kHz and the real Nyquist is 2.4 kHz. Design to 2.4 kHz, not 5 kHz. Worth raising with a TA, it is a genuinely good question and shows we understand what the mux does."
 mk wk04 analogue-freeze "area:analogue,as-taught" "$TE" "Size Rin and check regulator dissipation, Lab 3 Part 5" \
-  "The taught supply is half-wave rectifier plus current-limiting resistor Rin plus Cs plus linear regulator, so the pre-drop already exists in the design. Lab models 50 mA and asks what breaks at 100 mA. Our SMT part is the LM78L05, which is only 100 mA, so work out how the drop splits between Rin and the regulator and confirm the package survives it. Thermal management is a stated learning outcome and this is where to earn it."
+  "Add the op-amp choice into this: LT6221 costs about 12 mA more than LM324 across four amplifiers, worth 0.16 W extra in the regulator. The taught supply is half-wave rectifier plus current-limiting resistor Rin plus Cs plus linear regulator, so the pre-drop already exists in the design. Lab models 50 mA and asks what breaks at 100 mA. Our SMT part is the LM78L05, which is only 100 mA, so work out how the drop splits between Rin and the regulator and confirm the package survives it. Thermal management is a stated learning outcome and this is where to earn it."
 mk wk04 progress-review "area:analogue,as-taught" "$TE" "5 V supply, Lab 3 Part 5: half-wave rectifier, Rin, Cs, regulator" \
   "Lab walks the whole thing including ripple from Cs and the line regulation sum. Answer Q5.4 on half wave vs full wave properly, it is an obvious interview question. Off the critical path, good first analogue block to own. Review: analogue owner."
 mk wk04 progress-review "area:analogue" "$FW" "Zero-cross detector into ICP1" \
@@ -152,7 +160,7 @@ mk wk04 progress-review "area:analogue,as-taught" "$AN" "2.1 V offset generator,
   "Lab explicitly says a plain voltage divider is not good enough and hints at extra circuitry for a stable low-impedance reference. Both differential amplifiers depend on it, so a sloppy offset is a common mode error on every measurement."
 mk wk04 analogue-freeze "area:pcb" "$AN" "ATmega328PB support circuitry: decoupling, reset, 6-pin ISP header"
 mk wk04 analogue-freeze "area:pcb,decision" "$AN" "OPTIONAL: external ADC reference instead of AVCC" \
-  "The taught design assumes 0 to 5 V off the regulator. Signals sit at 1.1 to 3.1 V (2.1 V offset, 2 Vpk-pk), so a 4.096 V LM4040 fits with room and stops full scale drifting with the 78L05 output tolerance, which is a systematic gain error on every reading. Modest resolution gain, real stability gain. It is a deviation from the taught path so decide deliberately and write it up. Check the emulator amplitude first, A0 is 3.25 Vpk-pk which reaches 3.7 V about a 2.1 V offset."
+  "The taught design assumes 0 to 5 V off the regulator. With LT6221 this stops being a modest gain and becomes the main resolution win: rail to rail output plus a 4.096 V reference plus a 2.048 V offset lets us use about 98% of the range instead of 40%. It also stops full scale drifting with the 78L05 output tolerance, which is a systematic gain error on every reading. Emulator stays compatible: A0 at 3.25 Vpk-pk around 2.048 V spans 0.42 to 3.67 V, inside 4.096. Decide together with the offset re-centring card, they only work as a pair."
 mk wk04 analogue-freeze "area:firmware" "$FW" "Brown-out detector config for EEPROM energy writes"
 mk wk04 analogue-freeze "area:firmware,decision" "$FW" "DECIDE: fixed point Q format and overflow analysis" \
   "Show worst case headroom at 7.5 VA. Getting this wrong shows up as clipping only at full load."
@@ -216,7 +224,9 @@ mk brk pcb-submission "area:admin" "$PE" "BOM finalised, parts reserved at the d
 
 # =================================================================
 wk "WEEK 7  |  14-18 Sep  |  PCB submission Thu 17"
-mk wk07 pcb-submission "area:pcb" "$AN" "Submit, tag main as pcb-submission, copy gerbers to pcb/outputs/"
+mk wk07 pcb-submission "area:pcb" "$AN" "Clone the Altium project from the workspace into pcb/altium/ and commit" \
+  "Workspace history lives in the cloud, GitHub is what gets marked. Snapshot at every milestone, and definitely before the TA check and submission."
+mk wk07 pcb-submission "area:pcb" "$AN" "Submit, tag main as pcb-submission, copy released gerbers to pcb/outputs/"
 mk wk07 pcb-submission "area:admin,everyone" "$ALL" "TH assembly workshop"
 mk wk07 firmware-complete "area:admin,everyone,assessed" "$ALL" "LAB 4 assessment: ADC, Tue 15 / Wed 16 Sep" \
   "Individually interviewed, 2.5%. Same week as PCB submission."

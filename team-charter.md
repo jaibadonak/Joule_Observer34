@@ -12,10 +12,10 @@ The only way that works is all four of us understanding the whole design. We get
 
 | Who | Owns |
 |---|---|
-| [ ] | Analogue front end, power supply, PCB |
-| [ ] | Sampling and core firmware |
-| [ ] | UART, display, ESP32, app |
-| [ ] | Integration, testing, enclosure |
+| [ Jai ] | Analogue front end, power supply, PCB |
+| [ Emre ] | Sampling and core firmware |
+| [ Noah ] | UART, display, ESP32, app |
+| [ Uzayr ] | Integration, testing, enclosure |
 
 Owning a block means you build it and you're the first person someone asks about it. It doesn't mean you're the only one who touches it.
 
@@ -55,7 +55,7 @@ Signed:
 
 | Name | Signature | Date |
 |---|---|---|
-| Jai  | | |
+| Jai  | JN | 31/07/2026 |
 | Uzayr | | |
 | Noah | | |
 | Emre | | |

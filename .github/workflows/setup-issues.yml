@@ -1,0 +1,28 @@
+name: Set up project board issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the plan only, create nothing"
+        type: boolean
+        default: true
+
+permissions:
+  issues: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create labels, milestones and issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            bash setup-issues.sh --dry-run
+          else
+            bash setup-issues.sh
+          fi

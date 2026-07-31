@@ -1,28 +1,41 @@
-name: Set up project board issues
+name: Project board issues
 
 on:
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "Print the plan only, create nothing"
-        type: boolean
-        default: true
+      mode:
+        description: "What to do"
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - create
+          - list-mine
+          - close-all
+          - delete-all
+          - wipe-labels
 
 permissions:
   issues: write
 
 jobs:
-  setup:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create labels, milestones and issues
+      - name: ${{ inputs.mode }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # delete-all needs repo admin, which GITHUB_TOKEN does not have.
+          # Add a PAT with repo scope as a secret named ADMIN_TOKEN to use it.
+          GH_TOKEN: ${{ secrets.ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
+          FORCE: 1
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            bash setup-issues.sh --dry-run
-          else
-            bash setup-issues.sh
-          fi
+          case "${{ inputs.mode }}" in
+            dry-run)     bash setup-issues.sh --dry-run ;;
+            create)      bash setup-issues.sh ;;
+            list-mine)   bash setup-issues.sh --list-mine ;;
+            close-all)   bash setup-issues.sh --close-all ;;
+            delete-all)  bash setup-issues.sh --delete-all ;;
+            wipe-labels) bash setup-issues.sh --wipe-labels ;;
+          esac

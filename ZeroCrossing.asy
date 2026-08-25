@@ -2,6 +2,7 @@ Version 4
 SymbolType BLOCK
 RECTANGLE Normal -112 -56 128 56
 WINDOW 0 8 -56 Bottom 2
+SYMATTR Prefix X
 PIN -112 -32 LEFT 8
 PINATTR PinName VCC+
 PINATTR SpiceOrder 1

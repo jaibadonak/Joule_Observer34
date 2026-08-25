@@ -2,7 +2,6 @@ Version 4
 SymbolType BLOCK
 RECTANGLE Normal -80 -56 96 56
 WINDOW 0 8 -56 Bottom 2
-SYMATTR Prefix X
 PIN -80 -32 LEFT 8
 PINATTR PinName V-shift
 PINATTR SpiceOrder 1

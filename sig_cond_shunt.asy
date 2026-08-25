@@ -1,16 +1,16 @@
 Version 4
 SymbolType BLOCK
-RECTANGLE Normal -80 -56 96 56
-WINDOW 0 8 -56 Bottom 2
+RECTANGLE Normal -80 -56 80 56
+WINDOW 0 0 -56 Bottom 2
 PIN -80 -32 LEFT 8
-PINATTR PinName V-shift
+PINATTR PinName 2.1
 PINATTR SpiceOrder 1
 PIN -80 0 LEFT 8
-PINATTR PinName Vcc+
+PINATTR PinName 5V
 PINATTR SpiceOrder 2
 PIN -80 32 LEFT 8
-PINATTR PinName Vvs
+PINATTR PinName Vis
 PINATTR SpiceOrder 3
-PIN 96 0 RIGHT 8
-PINATTR PinName Vf
+PIN 80 0 RIGHT 8
+PINATTR PinName Vis_f
 PINATTR SpiceOrder 4

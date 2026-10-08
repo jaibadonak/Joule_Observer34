@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Joule Observer</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #16181b; --muted: #5d646e; --grid: #e2e5e9;
+    --volt: #c2410c; --amp: #0369a1; --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --text: #e8eaed; --muted: #9aa1ab; --grid: #2a2f37;
+      --volt: #fbbf24; --amp: #38bdf8; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 15px; margin: 0; }
+
+  .status { display: flex; align-items: center; gap: 8px; margin: 4px 0 16px; font-size: 14px; color: var(--muted); }
+  .status::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status.ok::before { background: var(--ok); }
+  .status.warn::before { background: var(--warn); }
+  .status.bad::before { background: var(--bad); }
+
+  .readings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; transition: opacity .3s; }
+  .readings.stale { opacity: .4; }
+  .reading { min-width: 0; padding: 10px 12px; border-radius: 12px; border-top: 3px solid transparent; background: var(--card); }
+  .reading.volt { border-top-color: var(--volt); }
+  .reading.amp { border-top-color: var(--amp); }
+  .label { display: block; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .value { font-size: clamp(22px, 7vw, 34px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .unit { font-size: 14px; font-weight: 400; color: var(--muted); }
+
+  .card { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--card); }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .toggle { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--bg); }
+  .toggle button {
+    font: inherit; font-size: 14px; padding: 6px 12px; border: 0; border-radius: 6px;
+    background: none; color: var(--muted); cursor: pointer;
+  }
+  .toggle button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); }
+  canvas { display: block; width: 100%; height: clamp(220px, 55vw, 360px); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Joule Observer</h1>
+    <p id="status" class="status" role="status">Connecting…</p>
+  </header>
+
+  <section id="readings" class="readings stale" aria-label="Readings">
+    <div class="reading volt">
+      <span class="label">V RMS</span>
+      <span class="value"><span id="vrms">–</span> <span class="unit">V</span></span>
+    </div>
+    <div class="reading amp">
+      <span class="label">I RMS</span>
+      <span class="value"><span id="irms">–</span> <span class="unit">mA</span></span>
+    </div>
+    <div class="reading">
+      <span class="label">Power</span>
+      <span class="value"><span id="power">–</span> <span class="unit">W</span></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Waveform</h2>
+      <div class="toggle" role="group" aria-label="Waveform to show">
+        <button id="show-v" type="button" aria-pressed="true">Voltage</button>
+        <button id="show-i" type="button" aria-pressed="false">Current</button>
+      </div>
+    </div>
+    <canvas id="scope" role="img" aria-label="Live waveform"></canvas>
+  </section>
+</main>
+
+<script>
+'use strict';
+
+// Opened from a file (or with ?demo on the URL) the page makes up its own data,
+// so you can work on it without an ESP32. Otherwise it asks the ESP32.
+const DEMO = location.protocol === 'file:' || new URLSearchParams(location.search).has('demo');
+const POLL_MS = 250;    // how often to ask the ESP32 for new data
+const STALE_MS = 3000;  // readings older than this are greyed out
+
+const $ = id => document.getElementById(id);
+const canvas = $('scope');
+let latest = null;      // the last /api/data response (fields in docs/spec.md)
+let channel = 'v';      // waveform on screen: 'v' or 'i'
+
+// ---- Getting data ------------------------------------------------------------
+
+async function poll() {
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), 2000);
+  try {
+    const res = await fetch('/api/data', { cache: 'no-store', signal: abort.signal });
+    show(await res.json());
+  } catch (err) {
+    setStatus('bad', 'Can’t reach the ESP32. Is this device still on the JouleObserver WiFi?');
+    $('readings').classList.add('stale');
+  }
+  clearTimeout(timeout);
+  setTimeout(poll, POLL_MS);
+}
+
+// Made-up data in the same shape as /api/data: the lab bench's 14 V, 500 Hz
+// source driving 4 mH in series with a resistor that sweeps 2.5 to 7.5 VA.
+function demoData() {
+  const t = performance.now() / 1000;
+  const vrms = 14 + 0.3 * Math.sin(2 * Math.PI * t / 23);
+  const r = 50 + 27 * Math.sin(2 * Math.PI * t / 30);  // load resistor, ohms
+  const x = 2 * Math.PI * 500 * 0.004;                 // 4 mH at 500 Hz, ohms
+  const irms = vrms / Math.hypot(r, x);
+  const phi = Math.atan2(x, r);                        // current lags voltage
+  const v = [], i = [];
+  for (let k = 0; k < 20; k++) {                       // 2 cycles, 200 us apart
+    const wt = 2 * Math.PI * 500 * k * 200e-6;
+    v.push(Math.round(1000 * Math.SQRT2 * vrms * Math.sin(wt) + 60 * (Math.random() - 0.5)));
+    i.push(Math.round(1000 * Math.SQRT2 * irms * Math.sin(wt - phi) + 4 * (Math.random() - 0.5)));
+  }
+  return {
+    source: 'demo', age_ms: 0,
+    vrms_mV: Math.round(vrms * 1000),
+    irms_mA: Math.round(irms * 1000),
+    power_mW: Math.round(vrms * irms * Math.cos(phi) * 1000),
+    dt_us: 200, v_mV: v, i_mA: i,
+  };
+}
+
+// ---- Showing it --------------------------------------------------------------
+
+function setStatus(kind, text) {
+  $('status').className = 'status ' + kind;
+  $('status').textContent = text;
+}
+
+function show(data) {
+  latest = data;
+  const none = data.age_ms === null;
+  const stale = !none && data.age_ms > STALE_MS;
+
+  if (none) {
+    setStatus('warn', 'Connected to the ESP32. Waiting for the measurement board (nothing on UART2 yet).');
+  } else if (stale) {
+    setStatus('warn', `No new readings for ${Math.round(data.age_ms / 1000)} s. Check the ATmega’s UART link.`);
+  } else if (data.source === 'mock') {
+    setStatus('warn', 'Simulated data from the mock firmware. No ATmega involved.');
+  } else if (data.source === 'demo') {
+    setStatus('warn', 'Demo data. This page was opened without an ESP32.');
+  } else {
+    setStatus('ok', 'Live');
+  }
+
+  $('readings').classList.toggle('stale', none || stale);
+  $('vrms').textContent = none ? '–' : (data.vrms_mV / 1000).toFixed(2);
+  $('irms').textContent = none ? '–' : String(data.irms_mA);
+  $('power').textContent = none ? '–' : (data.power_mW / 1000).toFixed(2);
+  draw();
+}
+
+// Smallest 1, 2, 2.5 or 5 x 10^n that is at least x.
+function niceCeil(x) {
+  if (!(x > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(x)));
+  for (const m of [1, 2, 2.5, 5]) if (m * p >= x) return m * p;
+  return 10 * p;
+}
+
+// The y axis runs from -fullScale to +fullScale. It only changes when the trace
+// would go off the plot or shrink below a third of it, so it doesn't jump
+// around while the load changes.
+const fullScale = { v: 0, i: 0 };
+function scaleFor(ch, peak, smallest) {
+  const fs = fullScale[ch];
+  if (!fs || peak > fs || peak < fs / 3) fullScale[ch] = Math.max(smallest, niceCeil(peak * 1.1));
+  return fullScale[ch];
+}
+
+const round3 = x => String(Number(x.toPrecision(3)));
+
+function line(ctx, x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  const color = name => css.getPropertyValue(name).trim();
+
+  // Plot area, leaving room for the axis labels.
+  const left = 60, right = 8, top = 8, bottom = 24;
+  const pw = w - left - right, ph = h - top - bottom;
+  ctx.font = '12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = color('--muted');
+  ctx.strokeStyle = color('--grid');
+  ctx.lineWidth = 1;
+
+  const n = latest && latest.v_mV ? latest.v_mV.length : 0;
+  if (n < 2) {
+    ctx.strokeRect(left + 0.5, top + 0.5, pw, ph);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No waveform yet', left + pw / 2, top + ph / 2);
+    return;
+  }
+
+  const isV = channel === 'v';
+  const values = isV ? latest.v_mV.map(mv => mv / 1000) : latest.i_mA;
+  const unit = isV ? 'V' : 'mA';
+  const full = isV ? scaleFor('v', Math.max(...values.map(Math.abs)), 1)
+                   : scaleFor('i', Math.max(...values.map(Math.abs)), 10);
+  const dt = latest.dt_us / 1000;  // ms between samples
+  const span = dt * (n - 1);
+  const x = k => left + (k * dt / span) * pw;
+  const y = value => top + ph / 2 - (value / full) * (ph / 2);
+
+  // Grid: five levels up the side, round steps of time along the bottom.
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const f of [1, 0.5, 0, -0.5, -1]) {
+    const gy = Math.round(y(f * full)) + 0.5;
+    line(ctx, left, gy, left + pw, gy);
+    ctx.fillText(`${round3(f * full)} ${unit}`, left - 6, gy);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const step = niceCeil(span / 4);
+  for (let t = 0; t <= span + 1e-9; t += step) {
+    const gx = Math.round(left + (t / span) * pw) + 0.5;
+    line(ctx, gx, top, gx, top + ph);
+    const label = `${round3(t)} ms`;
+    ctx.fillText(label, Math.min(gx, w - ctx.measureText(label).width / 2), top + ph + 6);
+  }
+
+  // The trace, with a dot on each sample when there's room for them.
+  ctx.strokeStyle = ctx.fillStyle = color(isV ? '--volt' : '--amp');
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  values.forEach((value, k) => (k ? ctx.lineTo(x(k), y(value)) : ctx.moveTo(x(k), y(value))));
+  ctx.stroke();
+  if (pw / (n - 1) >= 10) {
+    values.forEach((value, k) => {
+      ctx.beginPath();
+      ctx.arc(x(k), y(value), 2.5, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  }
+}
+
+// ---- Start ---------------------------------------------------------------------
+
+for (const [id, ch] of [['show-v', 'v'], ['show-i', 'i']]) {
+  $(id).addEventListener('click', () => {
+    channel = ch;
+    $('show-v').setAttribute('aria-pressed', String(ch === 'v'));
+    $('show-i').setAttribute('aria-pressed', String(ch === 'i'));
+    draw();
+  });
+}
+window.addEventListener('resize', draw);
+
+draw();
+if (DEMO) {
+  show(demoData());
+  setInterval(() => show(demoData()), 500);
+} else {
+  poll();
+}
+</script>
+</body>
+</html>

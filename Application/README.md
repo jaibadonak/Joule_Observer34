@@ -11,12 +11,14 @@ The ESP32 makes its own WiFi network. Join it with a phone and a live dashboard 
 
 ## Try the page with no hardware
 
-Double-click `web/index.html`. It opens in your browser with made-up data, and the status line says "Demo data". To work on the page, edit the file and refresh.
+Double-click `web/index.html` in File Explorer (in VS Code, right-click it and choose Reveal in File Explorer). It opens in your browser with made-up data, and the status line says "Demo data". To work on the page, edit the file and refresh.
+
+Nothing runs a web server on your PC, so there's no `localhost` address. The browser reads the file directly, and the address bar starts with `file:///C:/`. If you open the page through a VS Code preview or Live Server instead, add `?demo` to the end of its address. Otherwise it looks for an ESP32 and says it can't reach one.
 
 ## Flash the ESP32
 
 1. In VS Code, open the `Application` folder (File → Open Folder) so PlatformIO finds `platformio.ini`.
-2. Plug the DevKitC in over USB.
+2. Plug the DevKitC in over USB. A new port called "Silicon Labs CP210x USB to UART Bridge (COM*n*)" should appear in Device Manager under Ports (COM & LPT). If it doesn't, try another cable (some only charge) or install Silicon Labs' CP210x driver.
 3. Upload one of the two builds. In the PlatformIO sidebar, use Project Tasks → *build name* → Upload, or run the command in a PlatformIO terminal:
 
 | Build | Command | Use it when |
@@ -26,7 +28,9 @@ Double-click `web/index.html`. It opens in your browser with made-up data, and t
 
 `pio device monitor` shows the ESP32's USB log (115200 baud), including every line it receives from the ATmega or the mock.
 
-The page lives inside the firmware, so upload again after you edit `web/index.html`.
+The page lives inside the firmware, so there's no separate step to upload it (no "Upload Filesystem Image"). Upload again after you edit `web/index.html`.
+
+If the upload stops at `Connecting....` and fails, hold the BOOT button on the board while it connects. Close the serial monitor before uploading, because it holds the COM port.
 
 Libraries: WiFi, WebServer and DNSServer come with the ESP32 Arduino core, so there's nothing extra to install. The page is compiled in, so there's no LittleFS upload either.
 
@@ -38,6 +42,8 @@ Libraries: WiFi, WebServer and DNSServer come with the ESP32 Arduino core, so th
 4. If nothing opens, go to http://192.168.4.1 in the browser. On Android, turn mobile data off first, or the phone may try to load it over 4G/5G.
 
 On iPhone the dashboard opens in a sign-in sheet. Keep it open while you watch, because closing it can make iOS leave the network.
+
+A laptop works too. Join JouleObserver from the Windows WiFi menu, then open http://192.168.4.1. The laptop has no internet while it's connected.
 
 The status line under the title tells you what you're looking at:
 

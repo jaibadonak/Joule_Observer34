@@ -10,9 +10,22 @@
 
 int main(void)
 {
+    adc_init();
     /* Replace with your application code */
     while (1) 
     {
+
+    //-------------INSTANTANOUS POWER-----------//
+    if (conversion_ready) {
+        //power calc 
+        adc_start_capture();
+    }
+
+
+
+
+
+
     }
 }
 

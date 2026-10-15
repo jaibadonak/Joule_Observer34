@@ -17,6 +17,7 @@ uint16_t adc_read_voltage(uint8_t chan);
 uint16_t adc_read_current(uint8_t chan);
 
 uint16_t adc_convert_mA(uint16_t value);
+void    adc_start_capture(void);
 
 
 

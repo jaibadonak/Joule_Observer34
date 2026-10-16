@@ -66,6 +66,12 @@ void adc_init(void) {
 }
 
 void adc_start_capture(void) {
+	ADCSRA &= ~(1<<ADATE);                        // make sure free-run is off
+	channel = V_CH;
+	ADMUX = (ADMUX & 0xF0) | V_CH;
+	vOrI_samples = v_samples;
+	sample_position = 0;
+	flush = 0;
 	conversion_complete = 0;
 	armed = 1;                                    // next INT0 edge starts the V block
 }

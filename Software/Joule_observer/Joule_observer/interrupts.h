@@ -9,7 +9,11 @@
 #ifndef INTERRUPTS_H_
 #define INTERRUPTS_H_
 
+void interrupt_init(void);
 
+void current_zc(void) {};
+	
+void volatge_zc(void) {};
 
 
 

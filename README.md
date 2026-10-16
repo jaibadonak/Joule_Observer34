@@ -16,16 +16,6 @@ Entering the **Smart Energy Challenge**: SMT board carrying its own ATmega328PB 
 | UART | 9600 8N1, sends V, Ipk, P and Energy |
 | PCB | ≤20000 mm², double layer |
 
-## Who owns what
-
-| Member | GitHub | Subsystem |
-|---|---|---|
-| [Jai] | @jaibadonak | Analogue front end, power supply, PCB |
-| [ ] | @ | DSP / core firmware |
-| [ ] | @ | Peripherals — UART, display, ESP32, app |
-| [ ] | @ | Integration, test, enclosure |
-
-Roles are about who *builds* each block. All four of us get interviewed on all of it.
 
 ## Layout
 
@@ -43,34 +33,4 @@ docs/        datasheets/ images/
 DECISIONS.md Design decision log
 ```
 
-## Rules that matter
 
-**Binary files don't merge.** Altium, LTspice, Proteus and CAD files get no branches and one owner. Post in Slack before you open one ("taking the PCB"), pull first, post when you've pushed. Firmware and scripts are text — branch and PR normally.
-
-**Commit under your own account, on your UoA email.** Never push on someone else's behalf. The log is the record of who did what and it's read at every assessment.
-
-**Decisions go in `DECISIONS.md` the day they're made.** Slack scrolls away and assessors don't read it. One entry: what, why, what we rejected.
-
-**Tag before every assessed checkpoint** — `progress-review`, `pcb-submission`, `final-demo`.
-
-Commit format: `area: what changed` (`pcb: add Kelvin pads to shunt`, `fw: fix ADC mux settling`).
-
-## Dates
-
-| | |
-|---|---|
-| 25–26 Aug | Progress review — analogue done in LTspice, UART on Proteus + Xplained Mini |
-| **1 Sep** | **Analogue freeze.** Schematic changes stop. |
-| **17 Sep** | **PCB submission.** TA check by ~8 Sep. |
-| 28 Sep–2 Oct | Boards land, staged bring-up |
-| 20–22 Oct | Interviews and demo |
-
-Tests are 17 Aug and 5 Oct — 45% of the course, 40% average needed to pass.
-
-## Notes
-
-There is **one board**. Labs 1 and 3 give us the whole analogue circuit; the challenge changes packages to SMT and adds the MCU section. Same schematic either way.
-
-Individual lab repos are separate. Collaborate freely, keep answers and commits your own.
-
-Task board: Issues are grouped by `wk:NN` label.

@@ -6,20 +6,15 @@
  */ 
 
  
-#include "uart.h"    // Include our UART function declarations
-#include <avr/io.h>  // Gives us access to ATmega328PB hardware registers
+#include "uart.h"   
+#include <avr/io.h>
 
-// Define the CPU clock speed if it has not already been defined elsewhere.
-// This must match the actual clock frequency used by the microcontroller.
 #ifndef F_CPU
 #define F_CPU 2000000UL
 #endif
 
-// Required UART communication speed: 9600 baud
 #define UART_BAUD 9600UL
 
-// Calculate the UART baud-rate register value.
-// The ATmega UART uses a clock divider when operating in normal mode.
 #define UBRR_VALUE ((F_CPU / (16UL * UART_BAUD)) - 1UL)
 
 
@@ -27,20 +22,15 @@
 void uart_init(void)
 {
     // Set the upper 8 bits of the baud-rate register.
-    // The >> 8 operation shifts the value right by 8 bits.
     UBRR0H = (uint8_t)(UBRR_VALUE >> 8);
 
     // Set the lower 8 bits of the baud-rate register.
-    // This determines the actual communication speed.
     UBRR0L = (uint8_t)UBRR_VALUE;
 
     // Enable the UART transmitter.
-    // TXEN0 is the bit that allows the UART to send data.
     UCSR0B = (1 << TXEN0);
 
-    // Configure the UART for 8 data bits, no parity and 1 stop bit (8N1).
-    // UCSZ01 and UCSZ00 together select 8-bit data.
-    // Parity and the second stop bit remain disabled.
+    // Configure the UART(8N1).
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
 }
 
@@ -48,21 +38,19 @@ void uart_init(void)
 
 void uart_transmit(char data)
 {
-    
+    //wait till empty
     while (!(UCSR0A & (1 << UDRE0)))
     {
-        // Do nothing while waiting for the transmitter.
+        // Do nothing while waiting for the transmitter
     }
 
     // Write the character to the UART data register.
-    // The hardware then sends the byte serially through the TX pin.
     UDR0 = data;
 }
 
 
 void uart_string(const char *str)
 {
-    // C strings end with a null character: '\0'.
     // Continue transmitting until the end of the string is reached.
     while (*str != '\0')
     {
@@ -94,8 +82,7 @@ void uart_int32(int32_t value)
         // Transmit the minus sign first.
         uart_transmit('-');
 
-        // Calculate the magnitude safely, including INT32_MIN.
-        // Negating INT32_MIN directly would overflow a signed int32_t.
+        // Calculate the magnitude
         magnitude = (uint32_t)(-(value + 1)) + 1U;
     }
     else
@@ -109,7 +96,6 @@ void uart_int32(int32_t value)
     do
     {
         // % 10 gives the final decimal digit.
-        // Adding '0' converts the digit 0-9 into its text character.
         digits[count++] = '0' + (magnitude % 10U);
 
         // Remove the final digit by dividing by 10.
@@ -117,7 +103,7 @@ void uart_int32(int32_t value)
     }
     while (magnitude > 0U);
 
-    // The digits were stored backwards, so transmit them in reverse order.
+    // The digits were stored backwards so transmit in reverse
     while (count > 0U)
     {
         // Decrement count, then transmit the next digit.

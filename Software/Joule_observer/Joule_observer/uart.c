@@ -7,6 +7,7 @@
 
  
 #include "uart.h"   
+#include "common.h"
 #include <avr/io.h>
 
 #ifndef F_CPU

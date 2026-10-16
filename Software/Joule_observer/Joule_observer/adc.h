@@ -8,17 +8,16 @@
 
 #ifndef ADC_H_
 #define ADC_H_
-
 #include <stdint.h>
 
-//void     adc_init(void);
+#define samples 200
 
-uint16_t adc_read_voltage(uint8_t chan);
-uint16_t adc_read_current(uint8_t chan);
+void    adc_init(void);
+void    adc_start_capture(void);        // main: ask for a new V + I capture
+void    adc_trigger(void);              // call from ISR(INT0_vect): "voltage zero crossing just happened"
+uint8_t adc_capture_done(void);         // main: 1 once V and I are both captured
 
-uint16_t adc_convert_mA(uint16_t value);
-void    adc_start_capture(void);
+extern volatile uint16_t v_samples[];
+extern volatile uint16_t i_samples[];
 
-
-
-#endif /* ADC_H_ */
+#endif

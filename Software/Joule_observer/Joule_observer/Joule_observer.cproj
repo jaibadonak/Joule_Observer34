@@ -141,9 +141,6 @@
     <Compile Include="display.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="display_test.c">
-      <SubType>compile</SubType>
-    </Compile>
     <Compile Include="interrupts.h">
       <SubType>compile</SubType>
     </Compile>

@@ -18,7 +18,7 @@
 
 ISR(INT0_vect) {
 	adc_trigger();                  // first line, so the ADC starts with minimal delay
-	// ...your Timer1 code, if you keep it...
+
 }
 
 void int0_init(void) {

@@ -25,7 +25,7 @@
 #include "display.h"
 #include "uart.h"
 
-//#include "adc.h"            // TEST 3: uncomment when adc.c is finished
+#include "adc.h"            // TEST 3: uncomment when adc.c is finished
 
 int main(void)
 {
@@ -38,15 +38,15 @@ int main(void)
 
 	display_init();
 	uart_init();
-	//adc_init();                       // TEST 3: uncomment (before sei)
+	adc_init();                       // TEST 3: uncomment (before sei)
 	sei();                              // the display scan interrupt needs this
 
-	//adc_start_capture();              // TEST 3: uncomment
+	adc_start_capture();              // TEST 3: uncomment
 
 	while (1)
 	{
 		//---------------- TEST 1 and 2: display + UART with made-up numbers ----------------//
-		volts_mV   = 14000 + (int32_t)(tick % 20) * 10;     // 14.00 ... 14.19 V
+		/*volts_mV   = 14000 + (int32_t)(tick % 20) * 10;     // 14.00 ... 14.19 V
 		current_mA = 400   + (int32_t)(tick % 10) * 5;      // 400 ... 445 mA
 		power_mW   = 5600  + (int32_t)(tick % 10) * 20;     // 5.60 ... 5.78 W
 
@@ -54,23 +54,23 @@ int main(void)
 		energy_mWh = energy_mWs / 3600;                     // 3600 seconds in an hour
 
 		display_update(volts_mV, current_mA, power_mW, energy_mWh);
-		uart_send_measurements(volts_mV, current_mA, power_mW);
+		uart_send_measurements(volts_mV, current_mA, power_mW);*/
 
 		//---------------- TEST 3: ADC samples sent over UART (uncomment when ready) ----------------//
 		// Rename the calls to match your adc.c. This prints the first 5 raw samples
 		// of each capture as "v i" pairs, so you can check them in the terminal.
-		//
-		// if (adc_capture_done()) {
-		//     for (uint8_t k = 0; k < 5; k++) {
-		//         uart_int32(v_samples[k]);
-		//         uart_transmit(' ');
-		//         uart_int32(i_samples[k]);
-		//         uart_string("\r\n");
-		//     }
-		//     adc_start_capture();
-		// }
+		
+		 if (adc_capture_done()) {
+		     for (uint8_t k = 0; k < 5; k++) {
+		         uart_int32(v_samples[k]);
+		         uart_transmit(' ');
+		         uart_int32(i_samples[k]);
+		         uart_string("\r\n");
+		     }
+		     adc_start_capture();
+		 }
 
-		tick++;
-		_delay_ms(1000);
+		//tick++;
+		//_delay_ms(1000);
 	}
 }

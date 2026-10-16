@@ -8,6 +8,7 @@
 
 #ifndef CALCS_H_
 #define CALCS_H_
+extern volatile instpower[samples];
 
 
 

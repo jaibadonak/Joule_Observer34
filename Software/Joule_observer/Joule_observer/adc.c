@@ -9,6 +9,9 @@
 #include "interrupts.h"
 #include "adc.h"
 #include "common.h"
+
+#define V_CH 0
+#define I_CH 1
 volatile uint8_t 
 volatile uint16_t sample_position = 0;
 volatile uint8_t flush //a variable to ensure we are starting fresh conversions
@@ -17,38 +20,33 @@ volatile uint16_t v_samples[samples];
 volatile uint16_t i_samples[samples];
 volatile uint16_t *vOrI_samples = v_samples;
 
-ISR (INT0_vect) {
-	EIMSK &= ~(1<<INT0) //turn it off
-	sample_position = 0; 
-	ADCSRB &= ~(0x07);//free-running-mode, if not already.
-	ADCSRA |= (1<<ADATE)|(1<<ADSC);// start conversion (N1)
+ISR(INT0_vect) {
+    EIMSK &= ~(1<<INT0);                    // one trigger per capture
+    sample_position = 0;
+    ADCSRB &= ~0x07;                        // free-running trigger source
+    ADCSRA |= (1<<ADATE) | (1<<ADSC);       // start conversion
 }
 
-ISR (ADC_vect) {
+ISR(ADC_vect) {
+    if (flush) {                            // leftover conversion, discard
+        flush = 0;
+        channel = !channel;
+        ADMUX = (ADMUX & 0xF0) | (channel ? I_CH : V_CH);
+        vOrI_samples = channel ? i_samples : v_samples;
 
-	//fully finished conversion, hardware is idle
-	if (flush) {
-		flush = 0;
-		channel = !channel; //toggle
-		ADMUX = (ADMUX & 0xF0) | channel; //channel switch based on toggle
-		if (channel != 0) vOrI_samples = i_samples;   // channel is 1, recording current
-		else              vOrI_samples = v_samples;   // channel is 0, recording voltage
-		if (!(channel)) conversion_complete = 1; 
-		else {
-			EIFR  = (1<<INTF0);              // clear stale edge flag
-            EIMSK |= (1<<INT0);              // re
-		}
-	} else 
-	{
-		sample_position++;
-		vOrI_samples[sample_position] = ADC //record value and point to current sampling array.
-
-		if (sample_position >= samples) {
-			 ADCSRA &= ~(1<<ADATE);       // stop free-run
-			 flush = 1;                   // next interrupt is the leftover
-		}
-
-	}
+        if (channel == 0) {
+            conversion_complete = 1;        // V and I both captured
+        } else {
+            EIFR  = (1<<INTF0);             // clear stale edge flag
+            EIMSK |= (1<<INT0);             // arm for the I capture
+        }
+    } else {
+        vOrI_samples[sample_position++] = ADC;
+        if (sample_position >= samples) {
+            ADCSRA &= ~(1<<ADATE);          // stop free-run
+            flush = 1;                      // next interrupt is the leftover
+        }
+    }
 }
 
 void adc_init(void) {

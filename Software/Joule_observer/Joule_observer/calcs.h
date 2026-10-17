@@ -16,7 +16,7 @@ volatile void compute_instPower(uint16_t voltage[200], uint16_t current[200]);
 
 
 
-#endif /* CALCS_H_ */*/
+#endif /* CALCS_H_ */
 
 /*
  * calcs.h

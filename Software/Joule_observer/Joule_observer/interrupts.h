@@ -11,9 +11,9 @@
 
 void interrupt_init(void);
 
-void current_zc(void) {};
+//void current_zc(void) {};
 	
-void volatge_zc(void) {};
+//void volatge_zc(void) {};
 
 
 

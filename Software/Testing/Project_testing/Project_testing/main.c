@@ -19,6 +19,8 @@
  * (display.c can stay in the project, this version doesn't start the display)
  */
 
+#define F_CPU 20000000UL
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>

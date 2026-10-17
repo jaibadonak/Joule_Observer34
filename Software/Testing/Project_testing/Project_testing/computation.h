@@ -67,7 +67,7 @@ uint32_t energy_mWh(void);
 // Power: one count of V times one count of I = 109.26 mV x 3.877 mA = 0.4236 mW.
 #define P_MW_PER_COUNT2_X10000   4236       // 0.4236 mW per count x count, x10000
 
-// Timer1 free runs at 2 MHz / 64 = 31250 Hz (one tick = 32 us).
+// Timer1 free runs at 20 MHz / 1024 = 19531 Hz (one tick = 51.2 us).
 // One milliwatt-hour is 3600 s x 31250 ticks/s = 112,500,000 mW x ticks.
 #define TICKS_PER_MWH            112500000UL
 

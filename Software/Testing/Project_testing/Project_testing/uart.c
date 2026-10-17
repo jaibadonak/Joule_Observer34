@@ -11,7 +11,8 @@
 #include <avr/io.h>
 
 #ifndef F_CPU
-#define F_CPU 2000000UL
+#define F_CPU 20000000UL
+
 #endif
 
 #define UART_BAUD 9600UL

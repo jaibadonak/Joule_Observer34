@@ -10,18 +10,22 @@
 #include "adc.h"
 #include "computation.h"
 
-uint16_t adc_offset(){
-	uint16_t ADC_TOTAL = 0;
-	for (uint8_t i = 0; i < samples; i++){
-		ADC_TOTAL += v_samples[i];
-	}
-	
-	return ((ADC_TOTAL/samples)/5)*1024;
-}
-
 static uint32_t energy_acc = 0;             // energy not yet added to the total, in mW x ticks
 static uint32_t energy_total_mWh = 0;       // energy so far
-static uint16_t ADC_OFFSET_COUNTS = adc_offset();
+
+
+// Average of one block = its DC offset. The total is 32 bit because 200 samples of about 422
+// add up to more than a 16 bit number can hold. Works out when called, so it uses the block
+// that was just captured (it can't run at start up, the samples don't exist yet).
+uint16_t adc_offset(volatile uint16_t *block) {
+	uint32_t total = 0;
+
+	for (uint16_t k = 0; k < samples; k++) {
+		total = total + block[k];
+	}
+
+	return (uint16_t)((total + samples / 2) / samples);       // + samples/2 rounds to the nearest count
+}
 
 
 // Timer1 just counts, nothing else uses it. 1 tick = 32 us, wraps every 2.1 s.
@@ -42,7 +46,7 @@ static uint16_t square_root(uint32_t n) {
 		if (n >= result + bit) {
 			n = n - (result + bit);
 			result = (result >> 1) + bit;
-			} else {
+		} else {
 			result = result >> 1;
 		}
 		bit = bit >> 2;
@@ -52,10 +56,11 @@ static uint16_t square_root(uint32_t n) {
 
 // Vrms = square root of the mean of x squared, where x = count - offset
 uint32_t calc_voltage_rms_mV(void) {
+	uint16_t offset = adc_offset(v_samples);
 	uint32_t sum_sq = 0;
 
 	for (uint16_t k = 0; k < samples; k++) {
-		int32_t x = (int32_t)v_samples[k] - ADC_OFFSET_COUNTS;
+		int32_t x = (int32_t)v_samples[k] - offset;
 		sum_sq = sum_sq + (uint32_t)(x * x);
 	}
 
@@ -64,12 +69,29 @@ uint32_t calc_voltage_rms_mV(void) {
 	return ((uint32_t)rms_x10 * V_MV_PER_COUNT_X100) / 1000UL;
 }
 
+// Irms = square root of the mean of x squared, same method as the voltage.
+// Returned in hundredths of a mA so it can be shown with two decimals.
+uint32_t calc_current_rms_mA_x100(void) {
+	uint16_t offset = adc_offset(i_samples);
+	uint32_t sum_sq = 0;
+
+	for (uint16_t k = 0; k < samples; k++) {
+		int32_t x = (int32_t)i_samples[k] - offset;
+		sum_sq = sum_sq + (uint32_t)(x * x);
+	}
+
+	uint32_t mean_sq = sum_sq / samples;
+	uint16_t rms_x10 = square_root(mean_sq * 100UL);        // RMS in tenths of a count
+	return ((uint32_t)rms_x10 * I_MA_PER_COUNT_X1000) / 100UL;
+}
+
 // Peak current = biggest |x| in the block
 uint32_t calc_current_peak_mA(void) {
+	uint16_t offset = adc_offset(i_samples);
 	int32_t peak = 0;
 
 	for (uint16_t k = 0; k < samples; k++) {
-		int32_t x = (int32_t)i_samples[k] - ADC_OFFSET_COUNTS;
+		int32_t x = (int32_t)i_samples[k] - offset;
 		if (x < 0) x = -x;
 		if (x > peak) peak = x;
 	}
@@ -80,11 +102,13 @@ uint32_t calc_current_peak_mA(void) {
 // Real power = mean of v x i. v[k] and i[k] are the same point in the cycle
 // because both blocks start on the voltage zero crossing.
 uint32_t calc_power_mW(void) {
+	uint16_t offset_v = adc_offset(v_samples);
+	uint16_t offset_i = adc_offset(i_samples);
 	int32_t sum_xy = 0;
 
 	for (uint16_t k = 0; k < samples; k++) {
-		int32_t xv = (int32_t)v_samples[k] - ADC_OFFSET_COUNTS;
-		int32_t xi = (int32_t)i_samples[k] - ADC_OFFSET_COUNTS;
+		int32_t xv = (int32_t)v_samples[k] - offset_v;
+		int32_t xi = (int32_t)i_samples[k] - offset_i;
 		sum_xy = sum_xy + xv * xi;
 	}
 
@@ -111,4 +135,3 @@ void energy_add(uint32_t power_mW, uint16_t dt_ticks) {
 uint32_t energy_mWh(void) {
 	return energy_total_mWh;
 }
-

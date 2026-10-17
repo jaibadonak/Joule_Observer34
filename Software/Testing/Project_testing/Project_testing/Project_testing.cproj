@@ -126,13 +126,16 @@
     <Compile Include="adc.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="computation.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="computation.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="interrupts.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="main.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="math.c">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="uart.c">

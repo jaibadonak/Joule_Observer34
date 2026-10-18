@@ -154,7 +154,7 @@ int main(void)
  * The display scrolls V -> I -> P -> E by itself, 3 s each (12 s per round).
  */
 
-#define F_CPU 16000000UL
+#define F_CPU 2000000UL
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -165,12 +165,6 @@ int main(void)
 // Timer1 at clk/64 = 2 MHz / 64 = 31250 Hz, so one tick = 32 us
 #define ONE_SECOND_TICKS   31250
 #define SECONDS_PER_LOAD   12            // one full display round (4 x 3 s)
-#define LOADS              5
-
-// Made-up loads: Vrms in mV, current in mA, power in mW
-static const int32_t load_v[LOADS] = {14000, 14061, 12663, 15471,     0};
-static const int32_t load_i[LOADS] = {  538,   359,   596,   161,     0};
-static const int32_t load_p[LOADS] = { 7561,  4000,  7476,  2248,     0};
 
 int main(void)
 {
@@ -191,7 +185,7 @@ int main(void)
 	sei();                               // the display scan interrupt needs this
 
 	// Show the first load straight away
-	display_update(load_v[load], load_i[load], load_p[load], energy_mWh);
+	display_update(calc_voltage_rms_mV(), calc_current_peak_mA(), calc_power_mW(), energy_add());
 	last_ticks = TCNT1;
 
 	while (1)
@@ -204,20 +198,20 @@ int main(void)
 			elapsed_ticks = elapsed_ticks - ONE_SECOND_TICKS;
 
 			// Energy = power x time: add this second's power, carry whole mWh (3600 mW x s)
-			energy_acc_mWs = energy_acc_mWs + (uint32_t)load_p[load];
+			energy_acc_mWs = energy_acc_mWs + (uint32_t)calc_power_mW();
 			while (energy_acc_mWs >= 3600UL) {
 				energy_acc_mWs = energy_acc_mWs - 3600UL;
 				energy_mWh++;
 			}
 
-			display_update(load_v[load], load_i[load], load_p[load], (int32_t)energy_mWh);
-			uart_send_measurements(load_v[load], load_i[load], load_p[load]);
+			display_update(calc_voltage_rms_mV(), calc_current_peak_mA(), calc_power_mW(), energy_add());
+			uart_send_measurements(calc_voltage_rms_mV(), calc_current_peak_mA(), calc_power_mW());
 
 			seconds_on_load++;
 			if (seconds_on_load >= SECONDS_PER_LOAD) {
 				seconds_on_load = 0;
 				load++;
-				if (load >= LOADS) load = 0;
+				if (load >= 4) load = 0;
 			}
 		}
 	}

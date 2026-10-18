@@ -118,7 +118,7 @@ ISR(ADC_vect) {
 void adc_init(void) {
 	DIDR0  = (1<<ADC0D) | (1<<ADC1D);                       // PC0, PC1 analogue only
 	ADMUX  = (1<<REFS0);                                    // AVCC reference, right adjusted, channel 0
-	ADCSRA |= (1<<ADPS0) | (1<<ADPS1) | (1<<ADPS2);                                    // /16: 125 kHz ADC clock, 104 us per sample (9.6 kHz)
+	ADCSRA = (1<<ADPS2);                                    // /16: 125 kHz ADC clock, 104 us per sample (9.6 kHz)
 	ADCSRA |= (1<<ADEN);                                    // enable the ADC
 	ADCSRA |= (1<<ADSC);                                    // dummy conversion (the first one takes 25 clocks)
 	while (ADCSRA & (1<<ADSC)) { }                          // wait for it to finish

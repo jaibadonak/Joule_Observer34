@@ -46,14 +46,14 @@
 //---------------------------- Display behaviour ----------------------------//
 #define DISPLAY_DIGITS         4
 #define DISPLAY_REFRESH_HZ     50      // whole display (all 4 digits) refreshed this often
-#define DISPLAY_SCROLL_SECONDS 3       // time each measurement stays on screen
+#define DISPLAY_SCROLL_SECONDS 1       // time each measurement stays on screen
 #define DISPLAY_SCROLL_FRAMES  (DISPLAY_SCROLL_SECONDS * DISPLAY_REFRESH_HZ)
 
 // Timer0 compare value. One tick draws one digit, so the tick rate is
 // 4 x 50 Hz = 200 Hz. With a 2 MHz clock and a /64 prescaler:
 // 2000000 / 64 / 200 - 1 = 155. Keep DISPLAY_REFRESH_HZ at 31 or more, or this
 // no longer fits in the 8-bit OCR0A register.
-#define TIMER0_OCR  ((2000000UL / 64UL / (DISPLAY_REFRESH_HZ * DISPLAY_DIGITS)) - 1UL)
+#define TIMER0_OCR  ((16000000UL / 64UL / (DISPLAY_REFRESH_HZ * DISPLAY_DIGITS)) - 1UL)
 
 // Segment bits as shifted out: QA = a ... QG = g, QH = dp (bit 0 ... bit 7)
 #define SEG_DP     0x80

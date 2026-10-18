@@ -31,7 +31,7 @@ uint16_t adc_offset(volatile uint16_t *block) {
 // Timer1 just counts, nothing else uses it. 1 tick = 32 us, wraps every 2.1 s.
 void calcs_init(void) {
 	TCCR1A = 0;                             // normal mode
-	TCCR1B = (1<<CS12) | (1<<CS10);         // clk/128
+	TCCR1B = (1<<CS11) | (1<<CS10);         // clk/128
 }
 
 // Square root of a 32-bit number, rounded down (no floating point on the AVR)

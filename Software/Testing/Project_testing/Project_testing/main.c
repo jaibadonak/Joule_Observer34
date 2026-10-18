@@ -154,6 +154,8 @@ int main(void)
  * The display scrolls V -> I -> P -> E by itself, 3 s each (12 s per round).
  */
 
+#define F_CPU 16000000UL
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
@@ -209,7 +211,7 @@ int main(void)
 			}
 
 			display_update(load_v[load], load_i[load], load_p[load], (int32_t)energy_mWh);
-			uart_send_measurements(load_v[load], load_i[load], load_p[load], (int32_t)energy_mWh);
+			uart_send_measurements(load_v[load], load_i[load], load_p[load]);
 
 			seconds_on_load++;
 			if (seconds_on_load >= SECONDS_PER_LOAD) {

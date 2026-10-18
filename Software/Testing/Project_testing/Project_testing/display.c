@@ -6,7 +6,7 @@
  */
 
 #include "display.h"
-#include "common.h"
+
 #include <avr/interrupt.h>
 
 //---------------------------- Display ----------------------------//

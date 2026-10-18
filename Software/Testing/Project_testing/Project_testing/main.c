@@ -1,83 +1,46 @@
 /*
- * main.c  -  ESP32 + TERMINAL VERSION
+ * main.c  -  FULL PIPELINE: ADC -> calculations -> display + UART (ESP32)
+ * 2 MHz system clock.
  *
- * Reads V and I through the ADC, works out the RMS voltage, RMS current,
- * real power and energy, and once a second sends over UART (9600 8N1, TXD = PD1):
+ *   zero crossing (INT0) -> ADC capture (V block, then I block) -> calcs
+ *       -> display_update (4 times a second) and uart_send_measurements (once a second)
  *
- *   1. one line for the ESP32:        $M,14050,535,6030,4
- *                                      (Vrms mV, Irms mA, power mW, energy mWh)
- *   2. readable text for a terminal:   Voltage: 14.05V
- *                                      Current: 535.02mA
- *                                      Power: 6.03W
- *                                      Energy: 0.004Wh
+ * The calc functions are called ONCE per finished capture, never inside the
+ * display / UART calls. Their answers are kept in variables.
  *
- * The ESP32 only reads lines that start with $M or $W and ignores everything
- * else, so both can go out on the same wire. Remove the terminal part if you
- * want only the $M line.
- *
- * Needs in the project: main.c, adc.c/h, computation.c/h, vzc.c, interrupts.h, uart.c/h, common.h
- * (display.c can stay in the project, this version doesn't start the display)
- *
-
-#define F_CPU 16000000UL
+ * Needs in the project: main.c, adc.c/h, computation.c/h, display.c/h,
+ * vzc_interrupt.c, interrupts.h, uart.c/h
+ */
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
 #include "adc.h"
 #include "computation.h"
+#include "display.h"
 #include "interrupts.h"
 #include "uart.h"
 
-// Times are counted in Timer1 ticks (32 us each, see calcs_init)
-#define SEND_PERIOD_TICKS    15625      // send every 1 s
-#define NO_SIGNAL_TICKS      9765      // no finished capture for 0.5 s = no signal, report zeros
-
-// Print value / 10^decimals, e.g. print_fixed(1404, 2) prints 14.04
-static void print_fixed(uint32_t value, uint8_t decimals)
-{
-	uint32_t divisor = 1;
-	for (uint8_t i = 0; i < decimals; i++) {
-		divisor = divisor * 10;
-	}
-
-	uart_int32((int32_t)(value / divisor));         // whole part
-	uart_transmit('.');
-
-	uint32_t fraction = value % divisor;
-	divisor = divisor / 10;
-	while (divisor > 0) {                           // one digit at a time, keeps the leading zeros
-		uart_transmit('0' + (char)((fraction / divisor) % 10));
-		divisor = divisor / 10;
-	}
-}
-
-// The line the ESP32 reads: $M,<Vrms mV>,<Irms mA>,<power mW>,<energy mWh>
-static void send_esp_line(uint32_t vrms_mV, uint32_t irms_mA, uint32_t power_mW, uint32_t energy_mWh)
-{
-	uart_string("$M,");
-	uart_int32((int32_t)vrms_mV);
-	uart_transmit(',');
-	uart_int32((int32_t)irms_mA);
-	uart_transmit(',');
-	uart_int32((int32_t)power_mW);
-	uart_transmit(',');
-	uart_int32((int32_t)energy_mWh);
-	uart_string("\r\n");
-}
+// Timer1 is clk/64 = 31250 Hz at 2 MHz, so 1 tick = 32 us
+#define DISPLAY_UPDATE_TICKS   7812     // refresh the display numbers every 0.25 s
+#define SEND_PERIOD_TICKS      31250    // one UART line every 1 s
+#define NO_SIGNAL_TICKS        15625    // no finished capture for 0.5 s = no signal, show zeros
 
 int main(void)
 {
-	uint16_t last_ticks;                // Timer1 count when the last result came in
+	uint16_t last_ticks;
 	uint16_t now_ticks;
-	uint16_t dt_ticks;                  // time since the last result
-	uint16_t send_ticks = SEND_PERIOD_TICKS;        // start full so the first result goes out at once
+	uint16_t dt_ticks;
+	uint16_t display_ticks = DISPLAY_UPDATE_TICKS;   // start full so the first result shows at once
+	uint16_t send_ticks    = SEND_PERIOD_TICKS;
 
 	uint32_t vrms_mV      = 0;
-	uint32_t irms_mA_x100 = 0;          // hundredths of a mA
+	uint32_t irms_mA_x100 = 0;
+	uint32_t irms_mA      = 0;
 	uint32_t power_mW     = 0;
 	uint8_t  new_result;
 
+	display_init();
 	uart_init();
 	calcs_init();                       // starts Timer1
 	int0_init();
@@ -94,124 +57,35 @@ int main(void)
 		new_result = 0;
 
 		if (adc_capture_done()) {
-			// v_samples[] and i_samples[] are full and stay untouched until the next capture starts
+			// both blocks are full and stay untouched until the next capture starts
 			vrms_mV      = calc_voltage_rms_mV();
 			irms_mA_x100 = calc_current_rms_mA_x100();
+			irms_mA      = (irms_mA_x100 + 50) / 100;
 			power_mW     = calc_power_mW();
 			new_result = 1;
 		}
 		else if (dt_ticks > NO_SIGNAL_TICKS) {
-			// no zero crossings arriving, so no signal
 			vrms_mV = 0;
-			irms_mA_x100 = 0;
+			irms_mA = 0;
 			power_mW = 0;
 			new_result = 1;
 		}
 
 		if (new_result) {
 			last_ticks = now_ticks;
-			adc_start_capture();                    // results are copied out, start the next capture now
+			adc_start_capture();                    // results are copied out, start the next capture
 			energy_add(power_mW, dt_ticks);
+
+			display_ticks = display_ticks + dt_ticks;
+			if (display_ticks >= DISPLAY_UPDATE_TICKS) {
+				display_ticks = 0;
+				display_update((int32_t)vrms_mV, (int32_t)irms_mA, (int32_t)power_mW, (int32_t)energy_mWh());
+			}
 
 			send_ticks = send_ticks + dt_ticks;
 			if (send_ticks >= SEND_PERIOD_TICKS) {
 				send_ticks = send_ticks - SEND_PERIOD_TICKS;
-
-				// 1. for the ESP32 (whole mA, rounded)
-				send_esp_line(vrms_mV, (irms_mA_x100 + 50) / 100, power_mW, energy_mWh());
-
-				// 2. for the terminal
-				uart_string("Voltage: ");
-				print_fixed((vrms_mV + 5) / 10, 2);             // mV -> V, 2 decimals
-				uart_string("V\r\n");
-
-				uart_string("Current: ");
-				print_fixed(irms_mA_x100, 2);                   // mA, 2 decimals
-				uart_string("mA\r\n");
-
-				uart_string("Power: ");
-				print_fixed((power_mW + 5) / 10, 2);            // mW -> W, 2 decimals
-				uart_string("W\r\n");
-
-				uart_string("Energy: ");
-				print_fixed(energy_mWh(), 3);                   // mWh -> Wh, 3 decimals
-				uart_string("Wh\r\n\r\n");
-			}
-		}
-	}
-}*/
-
-/*
- * main.c  (TEST: display + ESP32 communication, no ADC)
- *
- * Feeds made-up readings to the 7-segment display and to the UART so the
- * display and the ESP32 website can be tested without the analogue side.
- * Assumes the 2 MHz system clock.
- *
- *   every second: send  $M,<Vrms mV>,<I mA>,<power mW>,<energy mWh>
- *   every 12 s  : move on to the next made-up load, so every value changes
- *
- * The display scrolls V -> I -> P -> E by itself, 3 s each (12 s per round).
- */
-
-#define F_CPU 2000000UL
-
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <stdint.h>
-#include "display.h"
-#include "uart.h"
-
-// Timer1 at clk/64 = 2 MHz / 64 = 31250 Hz, so one tick = 32 us
-#define ONE_SECOND_TICKS   31250
-#define SECONDS_PER_LOAD   12            // one full display round (4 x 3 s)
-
-int main(void)
-{
-	uint8_t  load = 0;                   // which made-up load is on
-	uint8_t  seconds_on_load = 0;
-	uint16_t last_ticks;
-	uint16_t elapsed_ticks = 0;          // ticks since the last 1 s mark
-	uint16_t now_ticks;
-
-	uint32_t energy_acc_mWs = 0;         // energy not yet turned into a whole mWh, in mW x s
-	uint32_t energy_mWh = 0;
-
-	display_init();
-	uart_init();
-
-	TCCR1A = 0;                          // Timer1: normal mode, just counts
-	TCCR1B = (1<<CS11) | (1<<CS10);      // clk/64
-	sei();                               // the display scan interrupt needs this
-
-	// Show the first load straight away
-	display_update(calc_voltage_rms_mV(), calc_current_peak_mA(), calc_power_mW(), energy_add());
-	last_ticks = TCNT1;
-
-	while (1)
-	{
-		now_ticks = TCNT1;
-		elapsed_ticks = elapsed_ticks + (uint16_t)(now_ticks - last_ticks);
-		last_ticks = now_ticks;
-
-		if (elapsed_ticks >= ONE_SECOND_TICKS) {
-			elapsed_ticks = elapsed_ticks - ONE_SECOND_TICKS;
-
-			// Energy = power x time: add this second's power, carry whole mWh (3600 mW x s)
-			energy_acc_mWs = energy_acc_mWs + (uint32_t)calc_power_mW();
-			while (energy_acc_mWs >= 3600UL) {
-				energy_acc_mWs = energy_acc_mWs - 3600UL;
-				energy_mWh++;
-			}
-
-			display_update(calc_voltage_rms_mV(), calc_current_peak_mA(), calc_power_mW(), energy_add());
-			uart_send_measurements(calc_voltage_rms_mV(), calc_current_peak_mA(), calc_power_mW());
-
-			seconds_on_load++;
-			if (seconds_on_load >= SECONDS_PER_LOAD) {
-				seconds_on_load = 0;
-				load++;
-				if (load >= 4) load = 0;
+				uart_send_measurements((int32_t)vrms_mV, (int32_t)irms_mA, (int32_t)power_mW);
 			}
 		}
 	}

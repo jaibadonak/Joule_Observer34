@@ -17,7 +17,7 @@
  *
  * Needs in the project: main.c, adc.c/h, computation.c/h, vzc.c, interrupts.h, uart.c/h, common.h
  * (display.c can stay in the project, this version doesn't start the display)
- */
+ *
 
 #define F_CPU 16000000UL
 
@@ -136,6 +136,86 @@ int main(void)
 				uart_string("Energy: ");
 				print_fixed(energy_mWh(), 3);                   // mWh -> Wh, 3 decimals
 				uart_string("Wh\r\n\r\n");
+			}
+		}
+	}
+}*/
+
+/*
+ * main.c  (TEST: display + ESP32 communication, no ADC)
+ *
+ * Feeds made-up readings to the 7-segment display and to the UART so the
+ * display and the ESP32 website can be tested without the analogue side.
+ * Assumes the 2 MHz system clock.
+ *
+ *   every second: send  $M,<Vrms mV>,<I mA>,<power mW>,<energy mWh>
+ *   every 12 s  : move on to the next made-up load, so every value changes
+ *
+ * The display scrolls V -> I -> P -> E by itself, 3 s each (12 s per round).
+ */
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <stdint.h>
+#include "display.h"
+#include "uart.h"
+
+// Timer1 at clk/64 = 2 MHz / 64 = 31250 Hz, so one tick = 32 us
+#define ONE_SECOND_TICKS   31250
+#define SECONDS_PER_LOAD   12            // one full display round (4 x 3 s)
+#define LOADS              5
+
+// Made-up loads: Vrms in mV, current in mA, power in mW
+static const int32_t load_v[LOADS] = {14000, 14061, 12663, 15471,     0};
+static const int32_t load_i[LOADS] = {  538,   359,   596,   161,     0};
+static const int32_t load_p[LOADS] = { 7561,  4000,  7476,  2248,     0};
+
+int main(void)
+{
+	uint8_t  load = 0;                   // which made-up load is on
+	uint8_t  seconds_on_load = 0;
+	uint16_t last_ticks;
+	uint16_t elapsed_ticks = 0;          // ticks since the last 1 s mark
+	uint16_t now_ticks;
+
+	uint32_t energy_acc_mWs = 0;         // energy not yet turned into a whole mWh, in mW x s
+	uint32_t energy_mWh = 0;
+
+	display_init();
+	uart_init();
+
+	TCCR1A = 0;                          // Timer1: normal mode, just counts
+	TCCR1B = (1<<CS11) | (1<<CS10);      // clk/64
+	sei();                               // the display scan interrupt needs this
+
+	// Show the first load straight away
+	display_update(load_v[load], load_i[load], load_p[load], energy_mWh);
+	last_ticks = TCNT1;
+
+	while (1)
+	{
+		now_ticks = TCNT1;
+		elapsed_ticks = elapsed_ticks + (uint16_t)(now_ticks - last_ticks);
+		last_ticks = now_ticks;
+
+		if (elapsed_ticks >= ONE_SECOND_TICKS) {
+			elapsed_ticks = elapsed_ticks - ONE_SECOND_TICKS;
+
+			// Energy = power x time: add this second's power, carry whole mWh (3600 mW x s)
+			energy_acc_mWs = energy_acc_mWs + (uint32_t)load_p[load];
+			while (energy_acc_mWs >= 3600UL) {
+				energy_acc_mWs = energy_acc_mWs - 3600UL;
+				energy_mWh++;
+			}
+
+			display_update(load_v[load], load_i[load], load_p[load], (int32_t)energy_mWh);
+			uart_send_measurements(load_v[load], load_i[load], load_p[load], (int32_t)energy_mWh);
+
+			seconds_on_load++;
+			if (seconds_on_load >= SECONDS_PER_LOAD) {
+				seconds_on_load = 0;
+				load++;
+				if (load >= LOADS) load = 0;
 			}
 		}
 	}

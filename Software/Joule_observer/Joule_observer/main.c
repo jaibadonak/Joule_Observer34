@@ -1,173 +1,151 @@
 /*
- * main.c  -  TEST VERSION
- *
- * Tests the display and the UART together using made-up measurements, so
- * nothing else in the project (adc, calcs, zero crossings) is needed.
- *
- * For this test the project should contain ONLY:
- *     main.c, display.c, display.h, uart.c, uart.h
- * Take adc.c, calcs.c, vzc.c, izc.c out of the project until they build
- * (right-click > Exclude From Project, the files stay on disk).
- *
- * What you should see
- *   Display  scrolls every 3 s:  14.00 V -> 400 mA -> 5.60 W -> 0.014 Wh
- *            the numbers tick up a little every second
- *   UART     one line a second at 9600 8N1, e.g.   $M,14000,400,5600
- *            (open a serial terminal on the USB-serial port to read it)
- *
-
-#define F_CPU 2000000UL
-
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <util/delay.h>
-#include <stdint.h>
-#include "display.h"
-#include "uart.h"
-
-#include "adc.h"            // TEST 3: uncomment when adc.c is finished
-
-int main(void)
-{
-	uint16_t tick = 0;                  // counts seconds
-	int32_t volts_mV;
-	int32_t current_mA;
-	int32_t power_mW;
-	int32_t energy_mWs = 0;             // energy so far in milliwatt-seconds
-	int32_t energy_mWh;
-
-	display_init();
-	uart_init();
-	adc_init();                       // TEST 3: uncomment (before sei)
-	sei();                              // the display scan interrupt needs this
-
-	adc_start_capture();              // TEST 3: uncomment
-
-	while (1)
-	{
-		//---------------- TEST 1 and 2: display + UART with made-up numbers ----------------//
-		/*volts_mV   = 14000 + (int32_t)(tick % 20) * 10;     // 14.00 ... 14.19 V
-		current_mA = 400   + (int32_t)(tick % 10) * 5;      // 400 ... 445 mA
-		power_mW   = 5600  + (int32_t)(tick % 10) * 20;     // 5.60 ... 5.78 W
-
-		energy_mWs = energy_mWs + power_mW;                 // power x 1 second
-		energy_mWh = energy_mWs / 3600;                     // 3600 seconds in an hour
-
-		display_update(volts_mV, current_mA, power_mW, energy_mWh);
-		uart_send_measurements(volts_mV, current_mA, power_mW);*/
-
-		//---------------- TEST 3: ADC samples sent over UART (uncomment when ready) ----------------//
-		// Rename the calls to match your adc.c. This prints the first 5 raw samples //
-		// of each capture as "v i" pairs, so you can check them in the terminal. //
-		
-/*		 if (adc_capture_done()) {
-		     for (uint8_t k = 0; k < 5; k++) {
-		         uart_int32(v_samples[k]);
-		         uart_transmit(' ');
-		         uart_int32(i_samples[k]);
-		         uart_string("\r\n");
-		     }
-		     adc_start_capture();
-		 }
-
-		//tick++;
-		//_delay_ms(1000);
-	}
-}
-*/
-
-/*
- * Joule_observer.c
- *
- * Created: 14/10/2026 5:04:55 pm
- * Author : Admin
- *
- * Joule Observer: reads the voltage and current waveforms through the ADC,
- * works out Vrms, peak current, real power and energy, shows them on the
- * display and sends them over UART.
- *
- *   zero crossing (INT0) -> ADC capture (V block, then I block) -> calcs
- *       -> display_update (4 times a second) and uart_send_measurements (once a second)
- *
- * The project needs: main.c, adc.c/h, calcs.c/h, display.c/h, uart.c/h,
- * vzc.c, interrupts.h, common.h
+ * 2 MHz ATmega328PB: V/I capture -> calculations -> display + UART.
+ * Build with -DDISPLAY_SELF_TEST for fixed 13.7U, 0.40A, 5.48P, 0.12E.
+ * In that build no analogue inputs or zero crossings are needed.
  */
-
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
 #include "adc.h"
-#include "calcs.h"
+#include "computation.h"
 #include "display.h"
 #include "interrupts.h"
 #include "uart.h"
 
-// Times are counted in Timer1 ticks (32 us each, see calcs_init)
-#define DISPLAY_UPDATE_TICKS   7812     // refresh the numbers on the display every 0.25 s
-#define UART_PERIOD_TICKS      31250    // send a UART line every 1 s
-#define NO_SIGNAL_TICKS        15625    // no finished capture for 0.5 s = no signal, show zeros
+#define DISPLAY_UPDATE_TICKS (TIMER1_TICKS_PER_SECOND / 4UL)
+#define UART_PERIOD_TICKS    TIMER1_TICKS_PER_SECOND
+#define NO_SIGNAL_TICKS      (TIMER1_TICKS_PER_SECOND / 2UL)
 
-int main(void)
-{
-	uint16_t last_ticks;                // Timer1 count when the last result came in
-	uint16_t now_ticks;
-	uint16_t dt_ticks;                  // time since the last result
-	uint16_t display_ticks = DISPLAY_UPDATE_TICKS;   // start full so the first result shows at once
-	uint16_t uart_ticks    = UART_PERIOD_TICKS;      // same for the first UART line
+#ifndef DISPLAY_SELF_TEST
+static void send_raw_stats(const char *name, volatile uint16_t *block) {
+    uint16_t lo = 1023, hi = 0;
+    uint32_t total = 0;
+    for (uint16_t k = 0; k < samples; k++) {
+        uint16_t value = block[k];
+        if (value < lo) lo = value;
+        if (value > hi) hi = value;
+        total += value;
+    }
+    uart_string(name);
+    uart_string(" raw: min "); uart_int32(lo);
+    uart_string(" max "); uart_int32(hi);
+    uart_string(" avg "); uart_int32(total / samples);
+    uart_string(" span "); uart_int32(hi - lo);
+    uart_string("\r\n");
+}
 
-	uint32_t vrms_mV  = 0;
-	uint32_t ipk_mA   = 0;
-	uint32_t power_mW = 0;
-	uint8_t  new_result;
+static void send_timeout_status(const adc_status_t *s) {
+    uart_string("ADC timeout: ch="); uart_int32(s->channel);
+    uart_string(" pos="); uart_int32(s->position);
+    uart_string(" armed="); uart_int32(s->armed);
+    uart_string(" active="); uart_int32(s->capturing);
+    uart_string(" zc="); uart_int32(s->zero_crossings);
+    uart_string(" mux="); uart_int32(s->mux);
+    uart_string(" ctrl="); uart_int32(s->control);
+    uart_string("\r\n");
+}
+#endif
 
-	display_init();
-	uart_init();
-	calcs_init();                       // starts Timer1
-	int0_init();
-	adc_init();
-	sei();                              // display scan, INT0 and ADC interrupts all need this
+int main(void) {
+    uint32_t display_ticks = DISPLAY_UPDATE_TICKS;
+    uint32_t uart_ticks = UART_PERIOD_TICKS;
+    uint32_t mode_ticks = 0;
+    uint16_t last_ticks;
+    uint8_t last_mode = 255;
+#ifndef DISPLAY_SELF_TEST
+    uint16_t capture_started;
+    uint8_t raw_due = 1;
+    uint32_t current_mA_x100 = 0;
+#endif
+    uint32_t vrms_mV = 0, current_mA = 0, power_mW = 0;
 
-	adc_start_capture();
-	last_ticks = TCNT1;
+    display_init();
+    uart_init();
+    calcs_init();
+#ifndef DISPLAY_SELF_TEST
+    int0_init();
+    adc_init();
+#endif
+    sei();
+#ifndef DISPLAY_SELF_TEST
+    uart_string("BOOT JouleObserver LIVE: ADC0=V ADC1=I VZC=INT0\r\n");
+    adc_start_capture();
+#else
+    uart_string("BOOT JouleObserver DISPLAY_SELF_TEST: fixed readings\r\n");
+#endif
+    last_ticks = TCNT1;
+#ifndef DISPLAY_SELF_TEST
+    capture_started = last_ticks;
+#endif
 
-	while (1)
-	{
-		now_ticks = TCNT1;
-		dt_ticks = (uint16_t)(now_ticks - last_ticks);
-		new_result = 0;
+    while (1) {
+        uint16_t now = TCNT1;
+        uint16_t dt = (uint16_t)(now - last_ticks);
+        last_ticks = now;
+        // Poll continuously, including time spent sending UART. Timer1 wraps safely.
+        energy_add(power_mW, dt);
+        display_ticks += dt;
+        uart_ticks += dt;
+        mode_ticks += dt;
 
-		if (adc_capture_done()) {
-			// v_samples[] and i_samples[] are full and stay untouched until the next capture starts
-			vrms_mV  = calc_voltage_rms_mV();
-			ipk_mA   = calc_current_peak_mA();
-			power_mW = calc_power_mW();
-			new_result = 1;
-		}
-		else if (dt_ticks > NO_SIGNAL_TICKS) {
-			// no zero crossings arriving, so no signal
-			vrms_mV  = 0;
-			ipk_mA   = 0;
-			power_mW = 0;
-			new_result = 1;
-		}
+        uint8_t mode = display_current_quantity();
+        // Send on every change and repeat every 250 ms so ESP32 can restart alone.
+        if (mode != last_mode || mode_ticks >= DISPLAY_UPDATE_TICKS) {
+            uart_send_mode(mode);
+            last_mode = mode;
+            mode_ticks = 0;
+        }
 
-		if (new_result) {
-			last_ticks = now_ticks;
-			adc_start_capture();                    // results are copied out, start the next capture now
-
-			energy_add(power_mW, dt_ticks);
-
-			display_ticks = display_ticks + dt_ticks;
-			if (display_ticks >= DISPLAY_UPDATE_TICKS) {
-				display_ticks = 0;
-				display_update((int32_t)vrms_mV, (int32_t)ipk_mA, (int32_t)power_mW, (int32_t)energy_mWh());
-			}
-
-			uart_ticks = uart_ticks + dt_ticks;
-			if (uart_ticks >= UART_PERIOD_TICKS) {
-				uart_ticks = 0;
-				uart_send_measurements((int32_t)vrms_mV, (int32_t)ipk_mA, (int32_t)power_mW);
-			}
-		}
-	}
+#ifdef DISPLAY_SELF_TEST
+        vrms_mV = 13700;
+        current_mA = 400;
+        power_mW = 5480;
+#else
+        if (adc_capture_done()) {
+            vrms_mV = calc_voltage_rms_mV();
+            current_mA_x100 = calc_current_rms_mA_x100();
+            current_mA = (current_mA_x100 + 50) / 100;
+            power_mW = calc_power_mW();
+            if (raw_due) {
+                // Read only while the buffers are frozen.
+                send_raw_stats("V", v_samples);
+                send_raw_stats("I", i_samples);
+                uart_string("I rms_mA_x100: "); uart_int32(current_mA_x100);
+                uart_string("\r\n");
+                // Buffers stay frozen until the complete waveform line is sent.
+                uart_send_waveform();
+                uart_send_calibration();
+                raw_due = 0;
+            }
+            adc_start_capture();
+            capture_started = TCNT1;
+        } else if ((uint16_t)(TCNT1 - capture_started) >= NO_SIGNAL_TICKS) {
+            adc_status_t status;
+            adc_get_status(&status);
+            vrms_mV = current_mA = power_mW = 0;
+            adc_start_capture();  // atomically abort partial captures before rearming
+            capture_started = TCNT1;
+            send_timeout_status(&status);
+        }
+#endif
+        if (display_ticks >= DISPLAY_UPDATE_TICKS) {
+            display_ticks %= DISPLAY_UPDATE_TICKS;
+#ifdef DISPLAY_SELF_TEST
+            display_update(vrms_mV, current_mA, power_mW, 123);
+#else
+            display_update(vrms_mV, current_mA, power_mW, energy_mWh());
+#endif
+        }
+        if (uart_ticks >= UART_PERIOD_TICKS) {
+            uart_ticks %= UART_PERIOD_TICKS;
+#ifdef DISPLAY_SELF_TEST
+            uart_send_measurements(vrms_mV, current_mA, power_mW, 123);
+#else
+            uart_send_measurements(vrms_mV, current_mA, power_mW, energy_mWh());
+#endif
+#ifndef DISPLAY_SELF_TEST
+            raw_due = 1;
+#endif
+        }
+    }
 }

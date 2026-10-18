@@ -15,7 +15,7 @@
  *     display_init();
  *     sei();
  *     ...
- *     display_update(vrms_mV, ipk_mA, power_mW, energy_mWh);
+ *     display_update(vrms_mV, irms_mA, power_mW, energy_mWh);
  *
  * Call display_update from main, not from an interrupt.
  */
@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <avr/io.h>
+#include "config.h"
 
 //---------------------------- Pins (from the schematic) ----------------------------//
 // Shift register, bit-banged on port C
@@ -36,7 +37,7 @@
 // Shift register output enable (OE, active low) on port B
 #define OES    PB2
 
-// Digit enables on port D. DS4 is the right-most digit, DS1 the left-most.
+// Digit enables on port D. Bench confirmed DS1 is right-most, DS4 left-most.
 #define DS1    PD4
 #define DS2    PD5
 #define DS3    PD6
@@ -53,7 +54,7 @@
 // 4 x 50 Hz = 200 Hz. With a 2 MHz clock and a /64 prescaler:
 // 2000000 / 64 / 200 - 1 = 155. Keep DISPLAY_REFRESH_HZ at 31 or more, or this
 // no longer fits in the 8-bit OCR0A register.
-#define TIMER0_OCR  ((2000000UL / 64UL / (DISPLAY_REFRESH_HZ * DISPLAY_DIGITS)) - 1UL)
+#define TIMER0_OCR  ((F_CPU / 64UL / (DISPLAY_REFRESH_HZ * DISPLAY_DIGITS)) - 1UL)
 
 // Segment bits as shifted out: QA = a ... QG = g, QH = dp (bit 0 ... bit 7)
 #define SEG_DP     0x80
@@ -72,18 +73,19 @@
 void display_init(void);
 
 // Give the display the latest measurements, in the same milli-units as the UART:
-// mV (Vrms), mA (peak current), mW (power) and mWh (energy).
-// Shown as:  14.00 V    841 mA    7.50 W    0.375 Wh
-// Energy is in Wh and moves its decimal point as it grows (0.375, 10.00, 100.0, 1000).
-// Out of range shows "----". Negative values show as 0.
-void display_update(int32_t vrms_mV, int32_t ipk_mA, int32_t power_mW, int32_t energy_mWh);
+// mV (Vrms), mA (RMS current), mW (power) and mWh (energy).
+// Right-most digit is a suffix: U=voltage, A=current, P=power, E=energy.
+// Three numeric digits show V, A, W and Wh: 13.7U, 0.40A, 5.48P, 0.12E.
+// Up to two decimals; reduce precision as values grow (9.99, 10.0, 100).
+// Out of range shows three dashes plus the suffix. Negative values show zero.
+void display_update(int32_t vrms_mV, int32_t irms_mA, int32_t power_mW, int32_t energy_mWh);
 
 // Lower level: load one measurement (DISPLAY_VOLTAGE ... DISPLAY_ENERGY) as
-// number / 10^decimals (decimals 0 to 3).
-// number above 9999 shows "----". Leading zeros are blanked.
+// number / 10^decimals (decimals 0 to 2), followed by the quantity letter.
+// number above 999 shows three dashes plus the suffix. Leading zeros are blanked.
 void display_set_number(uint8_t quantity, uint32_t number, uint8_t decimals);
 
-// The measurement currently on screen, e.g. to light a matching indicator LED.
+// The measurement currently on screen, also reported to the website over UART.
 uint8_t display_current_quantity(void);
 
 #endif /* DISPLAY_H_ */

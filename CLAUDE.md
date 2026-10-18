@@ -10,7 +10,7 @@ Most of the repo is binary or tool-native design files (LTspice, Proteus, Altium
 
 ## Repo map
 
-- `firmware/UART_209/` is a Microchip/Atmel Studio 7 solution (`.atsln` + `.cproj`) with a single `main.c`. It is currently a UART proof of concept: it sends hard-coded placeholder RMS voltage, peak current and power values once a second as fixed-point ASCII (the `print_*` helpers scale by 10 or 100 and print digit by digit, with no `printf` or float formatting). Real sampling and DSP are not written yet.
+- Software/Joule_observer/Joule_observer.atsln is the only AVR solution, targeting ATmega328PB. It contains ADC capture, per-channel DC-offset removal, RMS voltage/current, real power, energy, multiplexed display, and USART0. The obsolete placeholder UART project and duplicate Testing project were removed on 18 October 2026.
 - `firmware/UART_SIM.pdsprj` is the Proteus VSM simulation of the firmware.
 - `analogue/MASTER_SCHEMATIC_EE209.asc` and `LTspice-Final/` hold the LTspice models of the analogue front end: the signal conditioning (`sig_cond*`, first/second order, voltage and shunt-current channels), the zero-crossing detector, and `FinalParentSchematic.asc`, which instantiates those as hierarchical blocks (`.asy` symbols). `LM324.lib` is the op-amp model and must stay next to the schematics. A second copy of `FinalParentSchematic.asc` sits at the repo root.
 - `DECISIONS.md` is the design decision log (OPEN/DECIDED entries, each with "Needed by", "Owner", "Why" and "Rejected"). Many hardware/firmware parameters (clock source, fixed-point format, ADC reference, sampling and skew correction, filter corner) are tracked there. Check it before assuming a value.
@@ -20,21 +20,20 @@ Most of the repo is binary or tool-native design files (LTspice, Proteus, Altium
 
 ## Building firmware
 
-The real workflow is to open `firmware/UART_209/UART_209.atsln` in Atmel Studio 7 and build. To compile from the command line with the toolchain that ships with Atmel Studio (avr-gcc 5.4):
+Open Software/Joule_observer/Joule_observer.atsln in Atmel/Microchip Studio,
+or run ./Software/build-and-test.ps1 from the repository root. The script
+builds real and fixed-display firmware with warnings treated as errors and
+runs capture/calculation/display/energy regression checks in the AVR instruction
+simulator. Build outputs are under Debug/ and ignored by git.
 
-```bash
-T="/c/Program Files (x86)/Atmel/Studio/7.0/toolchain/avr8/avr8-gnu-toolchain/bin"
-"$T/avr-gcc" -mmcu=atmega328p -Os -Wall -o out.elf firmware/UART_209/UART_209/main.c
-"$T/avr-size" out.elf
-"$T/avr-objcopy" -O ihex -R .eeprom out.elf out.hex
-```
+The target is **ATmega328PB**, with a **2 MHz actual CPU clock**. ADC0/PC0 is
+voltage, ADC1/PC1 is current, INT0/PD2 is the voltage zero crossing. USART0 TX
+on PD1 sends $M readings (RMS current) and $D display modes at 9600 baud.
+ADC prescaler /16 gives 104 us per conversion; Timer1 /64 gives 31250 Hz.
+Keep clock, UART, ADC, Timer0 and energy constants consistent.
 
-Write build output outside the repo or under `Debug/`/`Release/`, which `.gitignore` excludes. There are no tests or linters. Verification happens in Proteus or on hardware.
-
-Points to keep in mind when editing firmware:
-- `F_CPU` is `#define`d as 2 MHz at the top of `main.c` (the course-mandated system clock), and `UBRR` is derived from it. At 2 MHz, 9600 baud gives UBRR = 12 (about 0.2% error). If you change the clock or the baud rate, recheck the error.
-- The `.cproj` targets **ATmega328P**, but the final board uses the **ATmega328PB**. USART1 on the PB overlaps SPI0 and the ISP pins, which is an open decision in `DECISIONS.md`.
-- The values are 10-bit ADC samples on a 2 MHz AVR, so avoid `double` and `printf` in real code paths. The fixed-point format is still an open decision.
+See Software/README.md for triage findings, raw ADC diagnostics and the
+DISPLAY_SELF_TEST build. Keep only this AVR project.
 
 ## Building the ESP32 dashboard
 
@@ -46,10 +45,10 @@ pio run -e mock                # MOCK_ATMEGA: the ESP32 fakes the ATmega's lines
 pio run -e mock -t upload      # flash; `pio device monitor` echoes every UART line at 115200
 ```
 
-- `web/index.html` is built into the firmware by `board_build.embed_files`. Its symbols are `_binary_web_index_html_start` and `_end`, and it has no NUL terminator, so it's sent with an explicit length. Don't switch to `embed_txtfiles`, which rewrites the HTML file during the build.
+- `scripts/compress_page.py` creates deterministic `web/index.html.gz` before PlatformIO embeds it. Symbols are `_binary_web_index_html_gz_start` and `_end`; send its explicit length with Content-Encoding: gzip. No filesystem upload or external web assets are required.
 - There are no lib_deps. WiFi, WebServer (synchronous) and DNSServer ship with the Arduino core (2.0.17 on `espressif32@7.0.1`). Everything runs from `loop()`, so there's no locking around the shared readings.
 - To check page changes without hardware, open `web/index.html` from disk. On `file:` (or with `?demo`), it generates its own data in the `/api/data` shape.
-- The repo has no automated tests. The page's states can be checked by serving it next to a fake `/api/data`.
+- Run `node Application/tests/dashboard.test.cjs` for dashboard/calibration/state tests and `./Software/build-and-test.ps1` for AVR regression and ADC cycle-budget checks. Calibration gains/reference live in `Software/Joule_observer/Joule_observer/calibration.h`; power scaling is derived from both gains. Dashboard downloads require rebuilding/reflashing AVR, not remote writes.
 
 ## Team conventions (from README and team-charter.md)
 

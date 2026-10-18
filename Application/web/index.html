@@ -3,290 +3,253 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>Joule Observer</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b111a">
+<title>Joule Observer · Energy monitor</title>
 <style>
-  :root {
-    --bg: #f4f5f7; --card: #ffffff; --text: #16181b; --muted: #5d646e; --grid: #e2e5e9;
-    --volt: #c2410c; --amp: #0369a1; --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1115; --card: #181b21; --text: #e8eaed; --muted: #9aa1ab; --grid: #2a2f37;
-      --volt: #fbbf24; --amp: #38bdf8; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  main { max-width: 720px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 0; }
-  h2 { font-size: 15px; margin: 0; }
-
-  .status { display: flex; align-items: center; gap: 8px; margin: 4px 0 16px; font-size: 14px; color: var(--muted); }
-  .status::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .status.ok::before { background: var(--ok); }
-  .status.warn::before { background: var(--warn); }
-  .status.bad::before { background: var(--bad); }
-
-  .readings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; transition: opacity .3s; }
-  .readings.stale { opacity: .4; }
-  .reading { min-width: 0; padding: 10px 12px; border-radius: 12px; border-top: 3px solid transparent; background: var(--card); }
-  .reading.volt { border-top-color: var(--volt); }
-  .reading.amp { border-top-color: var(--amp); }
-  .label { display: block; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-  .value { font-size: clamp(22px, 7vw, 34px); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .unit { font-size: 14px; font-weight: 400; color: var(--muted); }
-
-  .card { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--card); }
-  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-  .toggle { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--bg); }
-  .toggle button {
-    font: inherit; font-size: 14px; padding: 6px 12px; border: 0; border-radius: 6px;
-    background: none; color: var(--muted); cursor: pointer;
-  }
-  .toggle button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); }
-  canvas { display: block; width: 100%; height: clamp(220px, 55vw, 360px); }
+:root{--bg:#0b111a;--panel:#121c29;--panel2:#172333;--line:#263548;--text:#edf4fa;--muted:#9bacc0;--v:#f7bd69;--i:#69baff;--p:#b6a0ff;--e:#65d6b0;--bad:#ff9292;--grid:#253447}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif}button,select{font:inherit}button,select{color:var(--text);border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:8px 12px}button{cursor:pointer}button:hover{border-color:#6b849f}button:focus-visible,select:focus-visible,canvas:focus-visible,summary:focus-visible{outline:2px solid var(--i);outline-offset:4px}button:disabled{opacity:.4;cursor:default}button[aria-pressed=true]{background:#263c51;border-color:#6d9ec4;color:#fff}main{max-width:1180px;padding:28px 32px 24px;margin:auto}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:22px;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:11px;font-weight:650;font-size:17px;letter-spacing:-.4px}.brand svg{width:34px;height:34px;color:var(--e)}.brand small{display:block;font-size:10px;letter-spacing:1.8px;color:var(--muted);font-weight:500;margin-top:1px}.connection{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}.badge{font-size:11px;letter-spacing:.7px;font-weight:650;border:1px solid var(--line);border-radius:30px;padding:5px 10px;white-space:nowrap;color:var(--muted)}.badge.ok{color:var(--e);border-color:#315e50;background:#142c27}.badge.warn{color:var(--v);border-color:#63533a;background:#30291e}.badge.bad{color:var(--bad);border-color:#6d3e44;background:#321f28}.badge::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:6px}.small{color:var(--muted);font-size:12px}.intro{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;padding:29px 0 22px}h1{font-size:clamp(25px,4vw,34px);font-weight:550;letter-spacing:-1.1px;line-height:1.2;margin:0 0 8px}p{margin:0}h2{font-size:18px;letter-spacing:-.4px;font-weight:550;margin:0}.eyebrow{font-size:10px;font-weight:600;letter-spacing:1.9px;color:var(--muted);text-transform:uppercase;margin-bottom:5px}.mode{color:var(--muted);font-size:12px;white-space:nowrap}.mode strong{color:var(--text);font-weight:500}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.reading{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:19px 18px 12px;overflow:hidden;position:relative}.reading::before{content:"";position:absolute;left:18px;top:0;width:30px;height:2px;background:var(--accent)}.label{font-size:10px;letter-spacing:1.4px;color:var(--muted);text-transform:uppercase}.number{font-size:clamp(26px,3.5vw,36px);letter-spacing:-1.3px;font-variant-numeric:tabular-nums;font-weight:550;line-height:1.4;margin-top:7px;white-space:nowrap}.unit{font-size:14px;letter-spacing:0;color:var(--muted);font-weight:400;margin-left:5px}.spark{width:100%;height:40px;display:block;margin:7px 0}.range{display:flex;justify-content:space-between;gap:5px;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}.stale .number{opacity:.45}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:18px 0 21px;gap:12px}.metric{border-right:1px solid var(--line);padding-left:10px}.metric:first-child{padding-left:0}.metric:last-child{border:0}.metric .label{font-size:9px;letter-spacing:1.1px}.metric strong{display:block;font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:2px}.scope{border:1px solid var(--line);background:var(--panel);border-radius:16px;overflow:hidden}.scope-head{padding:22px 22px 15px;display:flex;justify-content:space-between;align-items:center;gap:14px}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{font-size:12px}.controls{padding:0 22px 17px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.tabs,.segments{display:inline-flex;gap:3px;border:1px solid var(--line);background:var(--bg);padding:3px;border-radius:10px}.tabs button,.segments button{border-color:transparent;background:transparent;font-size:12px;padding:7px 11px}.tabs button[aria-pressed=true],.segments button[aria-pressed=true]{background:var(--panel2);border-color:var(--line)}.tab-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px}.right-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.right-controls select{font-size:12px;padding:6px 9px}.check{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}.check input{accent-color:var(--i)}.plot-wrap{position:relative;padding:0 10px}#scope{display:block;width:100%;height:320px;touch-action:pan-y}.scope-note{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 23px;color:var(--muted);font-size:11px;border-bottom:1px solid var(--line);min-height:39px}.scope-note strong{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}.scope-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:17px 23px;gap:14px}.scope-stats .label{font-size:9px}.scope-stats strong{display:block;font-size:14px;font-weight:500;margin-top:4px;font-variant-numeric:tabular-nums}.status-message{font-size:12px;color:var(--muted);padding:14px 0 3px;min-height:32px}details{border-top:1px solid var(--line);margin-top:21px;padding-top:14px}summary{color:var(--muted);font-size:12px;cursor:pointer;width:max-content;max-width:100%}.diagnostics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;padding-top:16px}.diagnostics span{display:block;font-size:11px;color:var(--muted)}.diagnostics strong{display:block;font-size:13px;font-weight:500;margin-top:3px}.footer{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;color:#8296ae;font-size:10px;margin-top:23px}.text-button{background:none;border:0;padding:0;color:var(--muted);font-size:11px;text-decoration:underline;text-underline-offset:3px}.live-hint{color:var(--e)}[hidden]{display:none!important}
+.cal-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.cal-inputs label{font-size:11px;color:var(--muted)}.cal-inputs input{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;font:inherit;font-size:13px}.cal-table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}.cal-table th,.cal-table td{border-bottom:1px solid var(--line);padding:10px 9px;white-space:nowrap}.cal-table thead{color:var(--muted);font-size:10px}.cal-table th{font-weight:500}pre{background:var(--bg);border:1px solid var(--line);padding:14px;border-radius:9px;overflow:auto;color:var(--e);font-size:12px}@media(max-width:760px){.cal-inputs{grid-template-columns:1fr}.calibration .scope-head{align-items:flex-start;flex-direction:column}.connection{gap:6px}.connection button{font-size:11px;padding:5px 8px}.brand small{font-size:8px;letter-spacing:1px}}
+@media(min-width:1450px){main{padding-top:38px}#scope{height:360px}}
+@media(max-width:760px){main{padding:20px 16px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.reading{padding:15px 14px 11px}.number{font-size:32px}.intro{padding:24px 0 18px}.mode{font-size:10px}.scope-head{padding:18px 15px 13px}.controls{padding:0 12px 13px;gap:11px}.tabs{width:100%;justify-content:space-between}.tabs button{flex:1;padding:7px}.right-controls{width:100%;justify-content:space-between}.scope-stats{padding:15px;gap:10px}.scope-stats strong{font-size:12px}.scope-note{padding:10px 15px}.summary-grid{gap:7px}.metric{padding-left:7px}.metric strong{font-size:14px}.metric .label{font-size:8px;letter-spacing:.6px}#scope{height:280px}.diagnostics{grid-template-columns:repeat(2,1fr)}.top{align-items:flex-start}.brand{font-size:15px}.brand svg{width:29px}.connection .small{display:none}.intro{align-items:flex-start;flex-direction:column;gap:7px}}
+@media(prefers-reduced-motion:no-preference){button{transition:background .15s,border-color .15s}.number{transition:opacity .2s}}
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1>Joule Observer</h1>
-    <p id="status" class="status" role="status">Connecting…</p>
-  </header>
-
-  <section id="readings" class="readings stale" aria-label="Readings">
-    <div class="reading volt">
-      <span class="label">V RMS</span>
-      <span class="value"><span id="vrms">–</span> <span class="unit">V</span></span>
-    </div>
-    <div class="reading amp">
-      <span class="label">I RMS</span>
-      <span class="value"><span id="irms">–</span> <span class="unit">mA</span></span>
-    </div>
-    <div class="reading">
-      <span class="label">Power</span>
-      <span class="value"><span id="power">–</span> <span class="unit">W</span></span>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="card-head">
-      <h2>Waveform</h2>
-      <div class="toggle" role="group" aria-label="Waveform to show">
-        <button id="show-v" type="button" aria-pressed="true">Voltage</button>
-        <button id="show-i" type="button" aria-pressed="false">Current</button>
-      </div>
-    </div>
-    <canvas id="scope" role="img" aria-label="Live waveform"></canvas>
-  </section>
+<header class="top">
+ <div class="brand"><svg viewBox="0 0 36 36" fill="none" aria-hidden="true"><rect x="1" y="1" width="34" height="34" rx="10" stroke="currentColor" stroke-opacity=".5"/><path d="M20 7 10 20h8l-2 9 11-14h-8l1-8Z" fill="currentColor"/></svg><div>Joule Observer<small>TEAM 34 · ENERGY MONITOR</small></div></div>
+ <div class="connection"><button type="button" id="calibration-toggle" aria-pressed="false">Calibration</button><span class="small" id="source-label">Local instrument</span><span class="badge" id="status" role="status">Connecting</span></div>
+</header>
+<section class="intro"><div><div class="eyebrow">Measurement dashboard</div><h1>Electrical measurements</h1><p class="small">RMS voltage and current, real power and accumulated energy.</p></div><div class="mode">On the local display: <strong id="display-mode">—</strong></div></section>
+<section class="cards stale" id="readings" aria-label="Live electrical measurements">
+ <article class="reading" style="--accent:var(--v)"><span class="label">RMS voltage</span><div class="number"><span id="vrms">—</span><span class="unit">V</span></div><canvas id="spark-v" class="spark" role="img" aria-label="Voltage history"></canvas><div class="range"><span id="min-v">MIN —</span><span id="max-v">MAX —</span></div></article>
+ <article class="reading" style="--accent:var(--i)"><span class="label">RMS current</span><div class="number"><span id="irms">—</span><span class="unit">mA</span></div><canvas id="spark-i" class="spark" role="img" aria-label="Current history"></canvas><div class="range"><span id="min-i">MIN —</span><span id="max-i">MAX —</span></div></article>
+ <article class="reading" style="--accent:var(--p)"><span class="label">Real power</span><div class="number"><span id="power">—</span><span class="unit">W</span></div><canvas id="spark-p" class="spark" role="img" aria-label="Power history"></canvas><div class="range"><span id="min-p">MIN —</span><span id="max-p">MAX —</span></div></article>
+ <article class="reading" style="--accent:var(--e)"><span class="label">Total energy</span><div class="number"><span id="energy">—</span><span class="unit">Wh</span></div><canvas id="spark-e" class="spark" role="img" aria-label="Energy history"></canvas><div class="range"><span id="min-e">MIN —</span><span id="max-e">MAX —</span></div></article>
+</section>
+<section class="summary-grid" aria-label="Additional statistics">
+ <div class="metric"><span class="label">Apparent power</span><strong id="apparent">— VA</strong></div>
+ <div class="metric"><span class="label">Power factor</span><strong id="pf">—</strong></div>
+ <div class="metric"><span class="label">Voltage frequency</span><strong id="frequency">— Hz</strong></div>
+ <div class="metric"><span class="label">Last reading</span><strong id="age">Waiting</strong></div>
+</section>
+<section class="scope" aria-labelledby="scope-title">
+ <div class="scope-head"><div><div class="eyebrow">Oscilloscope</div><h2 id="scope-title">Waveforms and history</h2></div><div class="actions"><button id="pause" aria-pressed="false" type="button">Pause scope</button><button id="export" type="button" disabled>Export CSV</button></div></div>
+ <div class="controls">
+  <div class="tabs" role="group" aria-label="Reading to explore">
+   <button type="button" data-channel="v" aria-pressed="true"><span class="tab-dot" style="--accent:var(--v)"></span>Voltage</button>
+   <button type="button" data-channel="i" aria-pressed="false"><span class="tab-dot" style="--accent:var(--i)"></span>Current</button>
+   <button type="button" data-channel="p" aria-pressed="false"><span class="tab-dot" style="--accent:var(--p)"></span>Power</button>
+   <button type="button" data-channel="e" aria-pressed="false"><span class="tab-dot" style="--accent:var(--e)"></span>Energy</button>
+  </div>
+  <div class="right-controls"><div class="segments" role="group" aria-label="Chart view"><button id="view-wave" type="button" aria-pressed="true">Waveform</button><button id="view-history" type="button" aria-pressed="false">History</button></div><div class="actions"><label class="check"><input type="checkbox" id="overlay">Overlay V / I</label><select id="window" aria-label="Waveform time window"><option value="0">Full capture</option><option value="2">2 ms</option><option value="1">1 ms</option></select></div></div>
+ </div>
+ <div class="plot-wrap"><canvas id="scope" tabindex="0" role="img" aria-label="Electrical signal chart. Use left and right arrows to inspect points.">Select a reading to explore its waveform or recent history.</canvas></div>
+ <div class="scope-note"><span id="capture-note">Waiting for a waveform snapshot.</span><strong id="cursor">Move over the chart to inspect a sample</strong></div>
+ <div class="scope-stats"><div><span class="label" id="stat-label-1">Minimum</span><strong id="stat-1">—</strong></div><div><span class="label" id="stat-label-2">Maximum</span><strong id="stat-2">—</strong></div><div><span class="label" id="stat-label-3">RMS</span><strong id="stat-3">—</strong></div><div><span class="label" id="stat-label-4">Visible span</span><strong id="stat-4">—</strong></div></div>
+</section>
+<p class="status-message" id="message" role="status">Connecting to the instrument…</p>
+<section class="scope calibration" id="calibration-panel" aria-labelledby="cal-title" hidden style="margin-top:20px">
+ <div class="scope-head"><div><div class="eyebrow">ATmega328PB · ADC0 / ADC1</div><h2 id="cal-title">Calibration mode</h2></div><div class="actions"><button type="button" id="hold-calibration" aria-pressed="false">Hold ADC capture</button><button type="button" id="download-calibration" disabled>Download calibration.h</button></div></div>
+ <div style="padding:0 22px 20px">
+  <p class="small">Use a stable load. Measure the AC component at PC0 (pin 23) and PC1 (pin 24), relative to ground, and compare with the table. DC offset is removed when calculating AC RMS.</p>
+  <div class="cal-inputs">
+   <label>Measured AVCC / AREF (V)<input type="number" id="cal-vref" value="5.000" min="1" max="5.5" step="0.001"></label>
+   <label>Reference load voltage RMS (V)<input type="number" id="cal-voltage" placeholder="Leave blank to keep voltage gain" min="0.001" step="0.001"></label>
+   <label>Reference load current RMS (mA)<input type="number" id="cal-current" placeholder="Leave blank to keep current gain" min="0.001" step="0.001"></label>
+  </div>
+  <div style="overflow:auto"><table class="cal-table"><thead><tr><th>Input</th><th>ADC min / max</th><th>DC offset</th><th>AC RMS</th><th>Peak-to-peak</th></tr></thead><tbody><tr><th>Voltage · PC0</th><td id="cal-v-range">—</td><td id="cal-v-dc">—</td><td id="cal-v-rms">—</td><td id="cal-v-pp">—</td></tr><tr><th>Current · PC1</th><td id="cal-i-range">—</td><td id="cal-i-dc">—</td><td id="cal-i-rms">—</td><td id="cal-i-pp">—</td></tr></tbody></table></div>
+  <p id="cal-status" class="small" role="status" style="margin:14px 0">Waiting for raw ADC calibration telemetry.</p>
+  <pre id="cal-output" aria-label="Proposed AVR calibration constants">No calibration data.</pre>
+  <p class="small">The reference values above describe the load, before signal conditioning. Enter RMS values measured directly; peak-to-peak divided by 2√2 is valid only for a sine wave. Keep the current reference blank while its input is flat.</p>
+  <p class="small" style="margin-top:10px">To apply: replace calibration.h in the AVR project, build, then flash the AVR. The ESP32 cannot write AVR settings over the existing transmit-only firmware. Power scaling updates automatically; gain calibration does not correct phase error. The local display keeps showing normal measurements.</p>
+ </div>
+</section>
+<details><summary>Connection &amp; diagnostics</summary><div class="diagnostics"><div><span>Measurement packets</span><strong id="diag-packets">—</strong></div><div><span>Invalid / oversized lines</span><strong id="diag-errors">—</strong></div><div><span>Waveform age</span><strong id="diag-wave">—</strong></div><div><span>ESP32 uptime</span><strong id="diag-uptime">—</strong></div></div><p class="small" style="margin-top:14px">Waveforms use voltage-triggered blocks acquired in separate cycles. The power waveform is derived from V × I and assumes a stable periodic load.</p></details>
+<footer class="footer"><span id="history-note">Session history · 0 readings · stored in this tab</span><button type="button" id="clear" class="text-button">Clear session history</button><span>Team 34 · Joule Observer</span></footer>
 </main>
+<script id="metrics">
+'use strict';
+const Joule = {
+ stats(values) { const a=values.filter(Number.isFinite); if(!a.length)return null; return {min:Math.min(...a),max:Math.max(...a),mean:a.reduce((s,x)=>s+x,0)/a.length,rms:Math.sqrt(a.reduce((s,x)=>s+x*x,0)/a.length)}; },
+ frequency(values,dt) { if(!(dt>0)||values.length<4)return null; const s=this.stats(values); if(!s||s.max-s.min<20)return null; const level=(s.min+s.max)/2,cross=[]; for(let k=1;k<values.length;k++)if(values[k-1]<=level&&values[k]>level)cross.push(k-1+(level-values[k-1])/(values[k]-values[k-1])); if(cross.length<2)return null; return 1e6*(cross.length-1)/((cross[cross.length-1]-cross[0])*dt); },
+ valid(d) { return d&&['uart','mock','demo'].includes(d.source)&&(d.age_ms===null||(Number.isFinite(d.age_ms)&&d.age_ms>=0))&&['vrms_mV','irms_mA','power_mW'].every(k=>Number.isFinite(d[k]))&&d.vrms_mV>=0&&d.irms_mA>=0&&(d.energy_mWh==null||(Number.isFinite(d.energy_mWh)&&d.energy_mWh>=0)); },
+ wave(d) { return d&&Number.isFinite(d.dt_us)&&d.dt_us>0&&d.dt_us<=1e6&&Array.isArray(d.v_mV)&&Array.isArray(d.i_mA)&&d.v_mV.length>=2&&d.v_mV.length<=64&&d.v_mV.length===d.i_mA.length&&d.v_mV.every(Number.isFinite)&&d.i_mA.every(Number.isFinite); },
+ apparent(d) {return d.vrms_mV*d.irms_mA/1e6;},
+ pf(d) {const s=this.apparent(d),r=d.power_mW/1000/s;return s>0&&Number.isFinite(r)&&Math.abs(r)<=1?r:null;},
+ value(d,ch) {return ch==='v'?d.vrms_mV/1000:ch==='i'?d.irms_mA:ch==='p'?d.power_mW/1000:d.energy_mWh==null?null:d.energy_mWh/1000;},
+ calibrate(c,input) {
+ const errors=[],cfg={vref:Math.round(Number(input.vref)*1000),v:c.voltage_scale_x100,i:c.current_scale_x1000};
+ if(!Number.isFinite(cfg.vref)||cfg.vref<1000||cfg.vref>5500)errors.push('AVCC must be between 1.000 and 5.500 V.');
+ for(const [key,ref,raw,span,factor] of [['v',input.voltage,c.v_rms_x10,c.v_max-c.v_min,100000],['i',input.current,c.i_rms_x10,c.i_max-c.i_min,1000]]) {
+  if(ref==='')continue;
+  const min=key==='v'?c.v_min:c.i_min,max=key==='v'?c.v_max:c.i_max;
+  if(min<=1||max>=1022){errors.push((key==='v'?'Voltage':'Current')+' input is near a rail; check clipping.');continue;}
+  if(!Number.isFinite(Number(ref))||Number(ref)<=0){errors.push('Reference values must be positive RMS measurements.');continue;}
+  if(!(raw>0)||span<2){errors.push((key==='v'?'Voltage':'Current')+' input has too little AC variation to calibrate.');continue;}
+  cfg[key]=Math.round(Number(ref)*factor/(raw/10));
+ }
 
+ if(![cfg.v,cfg.i].every(v=>Number.isInteger(v)&&v>=1&&v<=60000))errors.push('Calculated gain is outside the supported range.');
+ return{cfg,errors};
+},
+ header(c) { return ['#ifndef JOULE_CALIBRATION_H','#define JOULE_CALIBRATION_H','','// RMS gain calibration. Rebuild and flash the AVR to apply.','#define ADC_REFERENCE_MV '+c.vref+'UL','#define V_MV_PER_COUNT_X100 '+c.v+'UL','#define I_MA_PER_COUNT_X1000 '+c.i+'UL','','#if ADC_REFERENCE_MV < 1000 || ADC_REFERENCE_MV > 5500','#error "ADC reference out of range"','#endif','#if V_MV_PER_COUNT_X100 < 1 || V_MV_PER_COUNT_X100 > 60000 || I_MA_PER_COUNT_X1000 < 1 || I_MA_PER_COUNT_X1000 > 60000','#error "Calibration gain out of range"','#endif','#define P_MW_PER_COUNT2_X10000 ((V_MV_PER_COUNT_X100 * I_MA_PER_COUNT_X1000 + 5000UL) / 10000UL)','','#endif',''].join('\n'); },
+ csv(rows) {return 'timestamp,voltage_V,current_mA,power_W,energy_Wh\r\n'+rows.map(r=>[new Date(r.t).toISOString(),r.v,r.i,r.p,r.e==null?'':r.e].join(',')).join('\r\n');}
+};
+if(typeof module!=='undefined')module.exports=Joule;
+</script>
 <script>
 'use strict';
-
-// Opened from a file (or with ?demo on the URL) the page makes up its own data,
-// so you can work on it without an ESP32. Otherwise it asks the ESP32.
-const DEMO = location.protocol === 'file:' || new URLSearchParams(location.search).has('demo');
-const POLL_MS = 250;    // how often to ask the ESP32 for new data
-const STALE_MS = 3000;  // readings older than this are greyed out
-
-const $ = id => document.getElementById(id);
-const canvas = $('scope');
-let latest = null;      // the last /api/data response (fields in docs/spec.md)
-let channel = 'v';      // waveform on screen: 'v' or 'i'
-
-// ---- Getting data ------------------------------------------------------------
-
-async function poll() {
-  const abort = new AbortController();
-  const timeout = setTimeout(() => abort.abort(), 2000);
-  try {
-    const res = await fetch('/api/data', { cache: 'no-store', signal: abort.signal });
-    show(await res.json());
-  } catch (err) {
-    setStatus('bad', 'Can’t reach the ESP32. Is this device still on the JouleObserver WiFi?');
-    $('readings').classList.add('stale');
-  }
-  clearTimeout(timeout);
-  setTimeout(poll, POLL_MS);
+const $=id=>document.getElementById(id);
+const DEMO=location.protocol==='file:'||new URLSearchParams(location.search).has('demo');
+const STALE=3000,MAX_HISTORY=300;
+const colors={v:'#f7bd69',i:'#69baff',p:'#b6a0ff',e:'#65d6b0'};
+const units={v:'V',i:'mA',p:'W',e:'Wh'};
+const names=['Voltage','Current','Power','Energy'];
+let latest=null,received=0,networkError=false,history=[],channel='v',view='wave',frozen=null,cursor=-1,plot=null;
+let seenSequence=null,epoch=null,deviceUptime=null;
+const canvas=$('scope');
+function fmt(x,d=2){return Number.isFinite(x)?x.toFixed(d):'—';}
+function ageOf(field='age_ms',data=latest){return !data||data[field]==null?null:data[field]+(frozen&&data===frozen.data?0:Date.now()-received);}
+function seconds(ms){return ms==null?'—':ms<1000?Math.round(ms)+' ms':(ms/1000).toFixed(1)+' s';}
+function duration(ms){const s=Math.floor(ms/1000);return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m '+s%60+'s';}
+function badge(kind,text){$('status').className='badge '+kind;$('status').textContent=text;}
+function refreshStatus(){
+ const age=ageOf(),none=!latest||latest.age_ms===null,stale=none||age>STALE||networkError;
+ $('readings').classList.toggle('stale',stale);
+ if(networkError){badge('bad','Disconnected');$('message').textContent='Cannot reach the ESP32. Check your JouleObserver WiFi connection.';}
+ else if(none){badge('warn','Waiting for data');$('message').textContent='Connected to the dashboard. Waiting for valid readings from the measurement board.';}
+ else if(age>STALE){badge('warn','Readings stale');$('message').textContent='No fresh measurement for '+seconds(age)+'. Last values are held on screen.';}
+ else if(latest.source!=='uart'){badge('warn',latest.source==='demo'?'Demo data':'Mock firmware');$('message').textContent='Simulated measurements · preview only. These readings do not come from the circuit.';}
+ else{badge('ok','Live measurements');$('message').textContent=latest.irms_mA===0?'Current is zero. Power and accumulated energy may stay unchanged.':'Receiving live measurements from the circuit.';}
+ $('age').textContent=none?'Waiting':seconds(age)+(networkError?' · offline':' ago');
+ $('source-label').textContent=DEMO?'Browser preview':'JouleObserver WiFi';
+ $('diag-wave').textContent=latest?seconds(ageOf('wave_age_ms')):'—';
+ $('frequency').textContent=latest&&Joule.wave(latest)&&ageOf('wave_age_ms')<=STALE&&!networkError?fmt(Joule.frequency(latest.v_mV,latest.dt_us),1)+' Hz':'— Hz';
 }
-
-// Made-up data in the same shape as /api/data: the lab bench's 14 V, 500 Hz
-// source driving 4 mH in series with a resistor that sweeps 2.5 to 7.5 VA.
-function demoData() {
-  const t = performance.now() / 1000;
-  const vrms = 14 + 0.3 * Math.sin(2 * Math.PI * t / 23);
-  const r = 50 + 27 * Math.sin(2 * Math.PI * t / 30);  // load resistor, ohms
-  const x = 2 * Math.PI * 500 * 0.004;                 // 4 mH at 500 Hz, ohms
-  const irms = vrms / Math.hypot(r, x);
-  const phi = Math.atan2(x, r);                        // current lags voltage
-  const v = [], i = [];
-  for (let k = 0; k < 20; k++) {                       // 2 cycles, 200 us apart
-    const wt = 2 * Math.PI * 500 * k * 200e-6;
-    v.push(Math.round(1000 * Math.SQRT2 * vrms * Math.sin(wt) + 60 * (Math.random() - 0.5)));
-    i.push(Math.round(1000 * Math.SQRT2 * irms * Math.sin(wt - phi) + 4 * (Math.random() - 0.5)));
-  }
-  return {
-    source: 'demo', age_ms: 0,
-    vrms_mV: Math.round(vrms * 1000),
-    irms_mA: Math.round(irms * 1000),
-    power_mW: Math.round(vrms * irms * Math.cos(phi) * 1000),
-    dt_us: 200, v_mV: v, i_mA: i,
-  };
+function resetHistory(){history=[];seenSequence=null;drawCards();draw();}
+function accept(d){
+ if(!Joule.valid(d))throw Error('Invalid measurement response');
+ const reset=latest&&(d.epoch!==epoch||(Number.isFinite(d.uptime_ms)&&deviceUptime!==null&&d.uptime_ms<deviceUptime)||(d.energy_mWh!=null&&latest.energy_mWh!=null&&d.energy_mWh<latest.energy_mWh));
+ if(reset){history=[];seenSequence=null;frozen=null;calibrationHeld=null;$('hold-calibration').textContent='Hold ADC capture';$('hold-calibration').setAttribute('aria-pressed','false');$('pause').textContent='Pause scope';$('pause').setAttribute('aria-pressed','false');}
+ epoch=d.epoch;deviceUptime=Number.isFinite(d.uptime_ms)?d.uptime_ms:null;latest=d;received=Date.now();networkError=false;
+ if(d.age_ms!==null&&d.age_ms<=STALE&&d.sequence!==seenSequence){
+  const t=received-d.age_ms;
+  history.push({t,v:Joule.value(d,'v'),i:Joule.value(d,'i'),p:Joule.value(d,'p'),e:Joule.value(d,'e')});
+  if(history.length>MAX_HISTORY)history.shift();seenSequence=d.sequence;
+ }
+ const available=d.age_ms!==null;
+ $('vrms').textContent=available?fmt(d.vrms_mV/1000):'—';$('irms').textContent=available?fmt(d.irms_mA,0):'—';$('power').textContent=available?fmt(d.power_mW/1000):'—';$('energy').textContent=available?fmt(Joule.value(d,'e'),3):'—';
+ $('apparent').textContent=available?fmt(Joule.apparent(d))+' VA':'— VA';$('pf').textContent=available?fmt(Joule.pf(d)):'—';
+ $('display-mode').textContent=d.display_mode>=0&&d.display_mode<4?names[d.display_mode]:'—';
+ $('diag-packets').textContent=String(d.sequence??'—');$('diag-errors').textContent=String(d.invalid_packets??0)+' / '+String(d.dropped_lines??0);$('diag-uptime').textContent=Number.isFinite(d.uptime_ms)?duration(d.uptime_ms):'—';
+ refreshStatus();drawCards();draw();updateCalibration();
 }
-
-// ---- Showing it --------------------------------------------------------------
-
-function setStatus(kind, text) {
-  $('status').className = 'status ' + kind;
-  $('status').textContent = text;
+async function poll(){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),2000);
+ try{const r=await fetch('/api/data',{cache:'no-store',signal:controller.signal});if(!r.ok)throw Error('HTTP '+r.status);accept(await r.json());}
+ catch(e){networkError=true;refreshStatus();draw();}
+ finally{clearTimeout(timer);setTimeout(poll,500);}
 }
-
-function show(data) {
-  latest = data;
-  const none = data.age_ms === null;
-  const stale = !none && data.age_ms > STALE_MS;
-
-  if (none) {
-    setStatus('warn', 'Connected to the ESP32. Waiting for the measurement board (nothing on UART2 yet).');
-  } else if (stale) {
-    setStatus('warn', `No new readings for ${Math.round(data.age_ms / 1000)} s. Check the ATmega’s UART link.`);
-  } else if (data.source === 'mock') {
-    setStatus('warn', 'Simulated data from the mock firmware. No ATmega involved.');
-  } else if (data.source === 'demo') {
-    setStatus('warn', 'Demo data. This page was opened without an ESP32.');
-  } else {
-    setStatus('ok', 'Live');
-  }
-
-  $('readings').classList.toggle('stale', none || stale);
-  $('vrms').textContent = none ? '–' : (data.vrms_mV / 1000).toFixed(2);
-  $('irms').textContent = none ? '–' : String(data.irms_mA);
-  $('power').textContent = none ? '–' : (data.power_mW / 1000).toFixed(2);
-  draw();
+let calibrationConfig=null,calibrationLoaded=false,calibrationHeld=null;
+function updateCalibration(){
+ const c=calibrationHeld?calibrationHeld.data:latest&&latest.calibration,valid=c&&['adc_reference_mV','voltage_scale_x100','current_scale_x1000','v_min','v_max','v_mean_x100','v_rms_x10','i_min','i_max','i_mean_x100','i_rms_x10','age_ms'].every(k=>Number.isFinite(c[k]));
+ const fresh=valid&&(calibrationHeld||c.age_ms+Date.now()-received<=STALE)&&ageOf()!==null&&ageOf()<=STALE&&!networkError;
+ $('download-calibration').disabled=true;calibrationConfig=null;
+ $('hold-calibration').disabled=!valid;
+ if(!valid){$('cal-status').textContent='No raw calibration data. Flash the updated AVR firmware to send $C packets.';return;}
+ if(!calibrationLoaded){$('cal-vref').value=(c.adc_reference_mV/1000).toFixed(3);calibrationLoaded=true;}
+ const ref=Number($('cal-vref').value)*1000;
+ for(const ch of ['v','i']) {
+  $('cal-'+ch+'-range').textContent=c[ch+'_min']+' / '+c[ch+'_max'];
+  $('cal-'+ch+'-dc').textContent=fmt(c[ch+'_mean_x100']/100*ref/1024/1000,3)+' V';
+  $('cal-'+ch+'-rms').textContent=fmt(c[ch+'_rms_x10']/10*ref/1024,2)+' mV';
+  $('cal-'+ch+'-pp').textContent=fmt((c[ch+'_max']-c[ch+'_min'])*ref/1024,2)+' mV';
+ }
+ const result=Joule.calibrate(c,{vref:$('cal-vref').value,voltage:$('cal-voltage').value,current:$('cal-current').value});
+ if(!fresh)result.errors.push('Calibration capture is stale. Wait for a fresh packet.');
+ if(latest.source!=='uart')result.errors.push('Simulated data: calibration downloads are disabled.');
+ $('cal-status').textContent=result.errors.length?result.errors.join(' '):(c.i_max===c.i_min?'Current input is flat. Voltage calibration is available; current gain will be kept.':'Fresh 200-sample blocks. Compare the ADC input values above with your scope.');
+ $('cal-output').textContent=['ADC_REFERENCE_MV = '+result.cfg.vref,'V_MV_PER_COUNT_X100 = '+result.cfg.v,'I_MA_PER_COUNT_X1000 = '+result.cfg.i,'P_MW_PER_COUNT2_X10000 = '+Math.round(result.cfg.v*result.cfg.i/10000)].join('\n');
+ if(calibrationHeld)$('cal-status').textContent='Held at '+new Date(calibrationHeld.at).toLocaleTimeString()+'. '+$('cal-status').textContent;
+ if(!result.errors.length){calibrationConfig=result.cfg;$('download-calibration').disabled=false;}
 }
-
-// Smallest 1, 2, 2.5 or 5 x 10^n that is at least x.
-function niceCeil(x) {
-  if (!(x > 0)) return 1;
-  const p = Math.pow(10, Math.floor(Math.log10(x)));
-  for (const m of [1, 2, 2.5, 5]) if (m * p >= x) return m * p;
-  return 10 * p;
+$('hold-calibration').addEventListener('click',()=>{if(calibrationHeld)calibrationHeld=null;else if(latest&&latest.calibration&&latest.calibration.age_ms+Date.now()-received<=STALE)calibrationHeld={data:JSON.parse(JSON.stringify(latest.calibration)),at:Date.now()};$('hold-calibration').textContent=calibrationHeld?'Resume ADC capture':'Hold ADC capture';$('hold-calibration').setAttribute('aria-pressed',String(!!calibrationHeld));updateCalibration();});
+$('calibration-toggle').addEventListener('click',()=>{const panel=$('calibration-panel');panel.hidden=!panel.hidden;$('calibration-toggle').setAttribute('aria-pressed',String(!panel.hidden));if(!panel.hidden)panel.scrollIntoView({behavior:'smooth',block:'start'});updateCalibration();});
+for(const id of ['cal-vref','cal-voltage','cal-current'])$(id).addEventListener('input',updateCalibration);
+$('download-calibration').addEventListener('click',()=>{updateCalibration();if(!calibrationConfig)return;const blob=new Blob([Joule.header(calibrationConfig)],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='calibration.h';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+let demoSeq=0,demoEnergy=0,demoLast=performance.now();
+function demoData(){
+ const now=performance.now(),t=now/1000,volts=13.8+.17*Math.sin(t/9),r=42+16*Math.sin(t/15),x=2*Math.PI*500*.004,amps=volts/Math.hypot(r,x),phi=Math.atan2(x,r),power=volts*amps*Math.cos(phi);
+ demoEnergy+=power*(now-demoLast)/3600;demoLast=now;const v=[],i=[];
+ for(let k=0;k<48;k++){const wt=2*Math.PI*500*k*.000104;v.push(Math.round(1000*Math.SQRT2*volts*Math.sin(wt)));i.push(Math.round(1000*Math.SQRT2*amps*Math.sin(wt-phi)));}
+ return{source:'demo',age_ms:0,sequence:++demoSeq,epoch:1,uptime_ms:Math.round(now),vrms_mV:Math.round(volts*1000),irms_mA:Math.round(amps*1000),power_mW:Math.round(power*1000),energy_mWh:Math.floor(demoEnergy),display_mode:Math.floor(t/3)%4,wave_sequence:demoSeq,wave_age_ms:0,dt_us:104,v_mV:v,i_mA:i,invalid_packets:0,dropped_lines:0,calibration:{age_ms:0,adc_reference_mV:5000,voltage_scale_x100:10926,current_scale_x1000:3877,v_min:422-Math.round(Math.SQRT2*volts*1000/109.26),v_max:422+Math.round(Math.SQRT2*volts*1000/109.26),v_mean_x100:42200,v_rms_x10:Math.round(volts*10000/109.26),i_min:422-Math.round(Math.SQRT2*amps*1000/3.877),i_max:422+Math.round(Math.SQRT2*amps*1000/3.877),i_mean_x100:42200,i_rms_x10:Math.round(amps*10000/3.877)}};
 }
-
-// The y axis runs from -fullScale to +fullScale. It only changes when the trace
-// would go off the plot or shrink below a third of it, so it doesn't jump
-// around while the load changes.
-const fullScale = { v: 0, i: 0 };
-function scaleFor(ch, peak, smallest) {
-  const fs = fullScale[ch];
-  if (!fs || peak > fs || peak < fs / 3) fullScale[ch] = Math.max(smallest, niceCeil(peak * 1.1));
-  return fullScale[ch];
+function setupCanvas(c){const w=c.clientWidth,h=c.clientHeight,ratio=Math.min(devicePixelRatio||1,2);c.width=Math.round(w*ratio);c.height=Math.round(h*ratio);const ctx=c.getContext('2d');ctx.setTransform(ratio,0,0,ratio,0,0);return{ctx,w,h};}
+function path(ctx,points,color,width=2){if(!points.length)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineJoin='round';ctx.beginPath();points.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();}
+function drawCards(){
+ for(const ch of ['v','i','p','e']){const values=history.map(r=>r[ch]).filter(Number.isFinite),s=Joule.stats(values),dec=ch==='i'?0:ch==='e'?3:2;
+ $('min-'+ch).textContent='MIN '+(s?fmt(s.min,dec):'—');$('max-'+ch).textContent='MAX '+(s?fmt(s.max,dec):'—');
+ const{ctx,w,h}=setupCanvas($('spark-'+ch));if(values.length>=2){const range=Math.max(s.max-s.min,ch==='i'?1:.001);path(ctx,values.map((v,k)=>[k/(values.length-1)*w,h-5-(v-s.min)/range*(h-10)]),colors[ch],1.6);}
+ }
+ $('export').disabled=!history.length;$('history-note').textContent='Session history · '+history.length+' / '+MAX_HISTORY+' readings · stored in this tab';
 }
-
-const round3 = x => String(Number(x.toPrecision(3)));
-
-function line(ctx, x1, y1, x2, y2) {
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
+function chartData(){
+ const d=frozen?frozen.data:latest,rows=frozen?frozen.history:history,isTrend=view==='history'||channel==='e';
+ if(isTrend){const valid=rows.filter(r=>Number.isFinite(r[channel]));return{trend:true,values:valid.map(r=>r[channel]),times:valid.map(r=>r.t),d,rows:valid};}
+ if(!Joule.wave(d))return{trend:false,values:[],times:[],d};
+ let n=d.v_mV.length;const windowMs=Number($('window').value);if(windowMs)n=Math.min(n,Math.floor(windowMs*1000/d.dt_us)+1);
+ const values=Array.from({length:n},(_,k)=>channel==='v'?d.v_mV[k]/1000:channel==='i'?d.i_mA[k]:d.v_mV[k]*d.i_mA[k]/1e6);
+ return{trend:false,values,times:values.map((_,k)=>k*d.dt_us/1000),d};
 }
-
-function draw() {
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const css = getComputedStyle(document.documentElement);
-  const color = name => css.getPropertyValue(name).trim();
-
-  // Plot area, leaving room for the axis labels.
-  const left = 60, right = 8, top = 8, bottom = 24;
-  const pw = w - left - right, ph = h - top - bottom;
-  ctx.font = '12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-  ctx.fillStyle = color('--muted');
-  ctx.strokeStyle = color('--grid');
-  ctx.lineWidth = 1;
-
-  const n = latest && latest.v_mV ? latest.v_mV.length : 0;
-  if (n < 2) {
-    ctx.strokeRect(left + 0.5, top + 0.5, pw, ph);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('No waveform yet', left + pw / 2, top + ph / 2);
-    return;
-  }
-
-  const isV = channel === 'v';
-  const values = isV ? latest.v_mV.map(mv => mv / 1000) : latest.i_mA;
-  const unit = isV ? 'V' : 'mA';
-  const full = isV ? scaleFor('v', Math.max(...values.map(Math.abs)), 1)
-                   : scaleFor('i', Math.max(...values.map(Math.abs)), 10);
-  const dt = latest.dt_us / 1000;  // ms between samples
-  const span = dt * (n - 1);
-  const x = k => left + (k * dt / span) * pw;
-  const y = value => top + ph / 2 - (value / full) * (ph / 2);
-
-  // Grid: five levels up the side, round steps of time along the bottom.
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (const f of [1, 0.5, 0, -0.5, -1]) {
-    const gy = Math.round(y(f * full)) + 0.5;
-    line(ctx, left, gy, left + pw, gy);
-    ctx.fillText(`${round3(f * full)} ${unit}`, left - 6, gy);
-  }
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  const step = niceCeil(span / 4);
-  for (let t = 0; t <= span + 1e-9; t += step) {
-    const gx = Math.round(left + (t / span) * pw) + 0.5;
-    line(ctx, gx, top, gx, top + ph);
-    const label = `${round3(t)} ms`;
-    ctx.fillText(label, Math.min(gx, w - ctx.measureText(label).width / 2), top + ph + 6);
-  }
-
-  // The trace, with a dot on each sample when there's room for them.
-  ctx.strokeStyle = ctx.fillStyle = color(isV ? '--volt' : '--amp');
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  values.forEach((value, k) => (k ? ctx.lineTo(x(k), y(value)) : ctx.moveTo(x(k), y(value))));
-  ctx.stroke();
-  if (pw / (n - 1) >= 10) {
-    values.forEach((value, k) => {
-      ctx.beginPath();
-      ctx.arc(x(k), y(value), 2.5, 0, 2 * Math.PI);
-      ctx.fill();
-    });
-  }
+function draw(){
+ const{ctx,w,h}=setupCanvas(canvas),data=chartData(),values=data.values,times=data.times,s=Joule.stats(values),overlay=!data.trend&&channel!=='p'&&$('overlay').checked&&Joule.wave(data.d);
+ $('view-wave').disabled=channel==='e';$('window').disabled=data.trend;$('overlay').disabled=data.trend||channel==='p';$('view-wave').setAttribute('aria-pressed',String(!data.trend));$('view-history').setAttribute('aria-pressed',String(data.trend));
+ const left=58,right=overlay?57:20,top=25,bottom=33,pw=Math.max(1,w-left-right),ph=h-top-bottom;
+ ctx.font='11px "Segoe UI",sans-serif';ctx.fillStyle='#93a9c0';ctx.strokeStyle='#253447';ctx.lineWidth=1;
+ function gridLine(x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+ plot=null;
+ if(!s||values.length<2){ctx.strokeRect(left,top,pw,ph);ctx.textAlign='center';ctx.fillText(data.trend?'History appears after two fresh readings.':'No waveform received yet.',left+pw/2,top+ph/2);$('capture-note').textContent=data.trend?'History uses distinct measurement packets.':'Waveforms need the updated AVR firmware; summary readings still work.';$('cursor').textContent='';for(let k=1;k<=4;k++)$('stat-'+k).textContent='—';return;}
+ let lo,hi;
+ if(data.trend){const pad=Math.max((s.max-s.min)*.15,channel==='i'?1:channel==='e'?.0005:.005);lo=s.min-pad;hi=s.max+pad;}
+ else{const magnitude=overlay?Math.max(...data.d.v_mV.slice(0,values.length).map(v=>Math.abs(v/1000))):Math.max(Math.abs(s.min),Math.abs(s.max));hi=Math.max(magnitude*1.18,channel==='i'?1:channel==='p'?.01:.1);lo=-hi;}
+ const start=times[0],span=Math.max(times[times.length-1]-start,.001),x=k=>left+(times[k]-start)/span*pw,y=v=>top+(hi-v)/(hi-lo)*ph;
+ ctx.textAlign='right';for(let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4,py=y(v);gridLine(left,py,left+pw,py);ctx.fillText(fmt(v,channel==='i'&&!overlay?0:channel==='e'?3:2),left-9,py+4);}
+ ctx.textAlign='left';ctx.fillText(overlay?'V':units[channel],left-40,top-10);
+ ctx.textAlign='center';for(let k=0;k<=4;k++){const px=left+k/4*pw;gridLine(px,top,px,top+ph);const label=data.trend?Math.max(0,((frozen?frozen.at:Date.now())-(start+span*k/4))/1000).toFixed(0)+'s ago':(span*k/4+start).toFixed(1)+' ms';ctx.fillText(label,px,top+ph+21);}
+ ctx.save();ctx.beginPath();ctx.rect(left,top,pw,ph);ctx.clip();
+ const stale=!frozen&&(networkError||(data.trend?ageOf():ageOf('wave_age_ms',data.d))>STALE);ctx.globalAlpha=stale?.4:1;
+ if(overlay){const v=data.d.v_mV.slice(0,values.length).map(v=>v/1000),i=data.d.i_mA.slice(0,values.length),fullI=Math.max(...i.map(Math.abs),1)*1.18;path(ctx,v.map((v,k)=>[x(k),y(v)]),colors.v);path(ctx,i.map((v,k)=>[x(k),top+ph/2-v/fullI*ph/2]),colors.i);
+ ctx.restore();ctx.textAlign='left';ctx.fillStyle=colors.i;for(let k=0;k<=4;k++){const v=-fullI+2*fullI*k/4;ctx.fillText(fmt(v,0),left+pw+8,top+ph-k/4*ph+4);}ctx.fillText('mA',left+pw+8,top-10);ctx.save();ctx.beginPath();ctx.rect(left,top,pw,ph);ctx.clip();
+ }else path(ctx,values.map((v,k)=>[x(k),y(v)]),colors[channel],2.1);
+ ctx.restore();ctx.globalAlpha=1;
+ if(cursor>=0){cursor=Math.min(cursor,values.length-1);const px=x(cursor);ctx.strokeStyle='#9db2c9';ctx.setLineDash([3,4]);gridLine(px,top,px,top+ph);ctx.setLineDash([]);ctx.fillStyle=colors[channel];ctx.beginPath();ctx.arc(px,y(overlay?data.d.v_mV[cursor]/1000:values[cursor]),3.5,0,Math.PI*2);ctx.fill();
+ $('cursor').textContent=(data.trend?new Date(times[cursor]).toLocaleTimeString():fmt(times[cursor],3)+' ms')+' · '+(overlay?fmt(data.d.v_mV[cursor]/1000)+' V / '+fmt(data.d.i_mA[cursor],0)+' mA':fmt(values[cursor],channel==='e'?3:channel==='i'?0:2)+' '+units[channel]);
+ }else $('cursor').textContent='Move over the chart · arrow keys to inspect';
+ plot={left,pw,n:values.length};
+ const labels=data.trend?['Minimum','Maximum','Average','Visible span']:['Minimum','Maximum',channel==='p'?'Mean power':'RMS','Visible span'];
+ labels.forEach((v,k)=>$('stat-label-'+(k+1)).textContent=v);
+ $('stat-1').textContent=fmt(s.min,channel==='e'?3:channel==='i'?0:2)+' '+units[channel];$('stat-2').textContent=fmt(s.max,channel==='e'?3:channel==='i'?0:2)+' '+units[channel];$('stat-3').textContent=fmt(data.trend||channel==='p'?s.mean:s.rms,channel==='e'?3:channel==='i'?0:2)+' '+units[channel];$('stat-4').textContent=fmt(data.trend?span/1000:span,1)+(data.trend?' s':' ms');
+ let note=data.trend?values.length+' readings · session history':values.length+' samples · '+data.d.dt_us+' µs / sample';
+ if(channel==='p'&&!data.trend)note+=' · derived V × I';
+ if(!data.trend&&!frozen&&(networkError||ageOf('wave_age_ms',data.d)>STALE))note+=' · stale capture';
+ if(frozen)note='Paused scope · '+note;
+ $('capture-note').textContent=note;canvas.setAttribute('aria-label',(data.trend?'History of ':'Waveform of ')+names[['v','i','p','e'].indexOf(channel)]+'. Minimum '+$('stat-1').textContent+', maximum '+$('stat-2').textContent+'. Use arrow keys to inspect.');
 }
-
-// ---- Start ---------------------------------------------------------------------
-
-for (const [id, ch] of [['show-v', 'v'], ['show-i', 'i']]) {
-  $(id).addEventListener('click', () => {
-    channel = ch;
-    $('show-v').setAttribute('aria-pressed', String(ch === 'v'));
-    $('show-i').setAttribute('aria-pressed', String(ch === 'i'));
-    draw();
-  });
-}
-window.addEventListener('resize', draw);
-
-draw();
-if (DEMO) {
-  show(demoData());
-  setInterval(() => show(demoData()), 500);
-} else {
-  poll();
-}
+for(const b of document.querySelectorAll('[data-channel]'))b.addEventListener('click',()=>{channel=b.dataset.channel;cursor=-1;for(const q of document.querySelectorAll('[data-channel]'))q.setAttribute('aria-pressed',String(q===b));draw();});
+$('view-wave').addEventListener('click',()=>{view='wave';cursor=-1;draw();});$('view-history').addEventListener('click',()=>{view='history';cursor=-1;draw();});
+$('window').addEventListener('change',()=>{cursor=-1;draw();});$('overlay').addEventListener('change',()=>draw());
+$('pause').addEventListener('click',()=>{frozen=frozen?null:{data:latest?JSON.parse(JSON.stringify(latest)):null,history:history.map(r=>({...r})),at:Date.now()};$('pause').textContent=frozen?'Resume scope':'Pause scope';$('pause').setAttribute('aria-pressed',String(!!frozen));draw();});
+canvas.addEventListener('pointermove',e=>{if(!plot)return;const r=canvas.getBoundingClientRect();cursor=Math.max(0,Math.min(plot.n-1,Math.round((e.clientX-r.left-plot.left)/plot.pw*(plot.n-1))));draw();});
+canvas.addEventListener('pointerleave',()=>{cursor=-1;draw();});
+canvas.addEventListener('keydown',e=>{if(!plot||!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();cursor=Math.max(0,Math.min(plot.n-1,(cursor<0?0:cursor)+(e.key==='ArrowRight'?1:-1)));draw();});
+$('clear').addEventListener('click',()=>{frozen=null;$('pause').textContent='Pause scope';$('pause').setAttribute('aria-pressed','false');resetHistory();});
+$('export').addEventListener('click',()=>{const blob=new Blob([Joule.csv(history)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='joule-observer-'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+window.addEventListener('resize',()=>{drawCards();draw();});
+drawCards();draw();
+setInterval(()=>{refreshStatus();updateCalibration();},500);
+if(DEMO){accept(demoData());setInterval(()=>accept(demoData()),1000);}else poll();
 </script>
 </body>
 </html>

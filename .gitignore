@@ -53,6 +53,7 @@ slprj/
 
 # ── Python (test harness) ─────────────────────────────────────
 __pycache__/
+Application/web/index.html.gz
 *.py[cod]
 .venv/
 venv/

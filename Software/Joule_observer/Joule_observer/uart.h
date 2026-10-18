@@ -26,6 +26,14 @@ void uart_int32(int32_t value);
 // Send voltage, current and power measurements
 void uart_send_measurements(int32_t vrms_mV,
                             int32_t irms_mA,
-                            int32_t power_mW);
+                            int32_t power_mW,
+                            uint32_t energy_mWh);
 
-#endif /* UART_H_ */ 
+// 32 contiguous samples/channel, 104 us apart, from frozen cycle-aligned blocks.
+void uart_send_waveform(void);
+void uart_send_calibration(void);
+
+// Display mode: 0=voltage, 1=current, 2=power, 3=energy.
+void uart_send_mode(uint8_t mode);
+
+#endif /* UART_H_ */

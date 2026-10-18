@@ -1,56 +1,89 @@
-# Joule Observer WiFi dashboard
+# Joule Observer dashboard
 
-The ESP32 makes its own WiFi network. Join it with a phone and a live dashboard opens by itself. It shows V RMS, I RMS and power, with the waveform below and a Voltage/Current toggle.
+The ESP32 hosts this page on the JouleObserver WiFi network at http://192.168.4.1.
+The page is offline-capable: no external fonts, scripts, chart libraries or CDN.
 
-| Path | What it is |
-|---|---|
-| `src/main.cpp` | ESP32 firmware: WiFi network, captive portal, reads the ATmega on UART2, mock mode |
-| `web/index.html` | The dashboard page. The build puts it inside the firmware. |
-| `docs/spec.md` | The UART lines the ATmega sends, and the JSON the page reads |
-| `platformio.ini` | Board (`esp32dev`) and the two builds, `esp32dev` and `mock` |
+## Features
 
-## Try the page with no hardware
+- RMS voltage/current, real power, and AVR energy total.
+- History for every reading, session min/max, apparent power and power factor.
+- Actual voltage/current captures, V/I overlay, derived instantaneous power,
+  time-window controls, pause, keyboard/sample inspection and CSV history export.
+- Separate measurement and waveform freshness, UART error counters, display mode.
+- Display mode is metadata only; there are no ESP32 indicator GPIO outputs.
+  The AVR uses its right-most digit for U/A/P/E and shows V/A/W/Wh locally.
+- Calibration mode with raw ADC min/max/DC/AC RMS/peak-to-peak, capture hold,
+  reference inputs and a downloadable AVR calibration.h file.
+- Clear waiting, disconnected, stale, demo and mock states. Missing values are
+  shown as unavailable; missing waveforms are never synthesised for live data.
 
-Double-click `web/index.html` in File Explorer (in VS Code, right-click it and choose Reveal in File Explorer). It opens in your browser with made-up data, and the status line says "Demo data". To work on the page, edit the file and refresh.
+## Preview and test
 
-Nothing runs a web server on your PC, so there's no `localhost` address. The browser reads the file directly, and the address bar starts with `file:///C:/`. If you open the page through a VS Code preview or Live Server instead, add `?demo` to the end of its address. Otherwise it looks for an ESP32 and says it can't reach one.
+Open web/index.html directly for a clearly labelled demo, or serve web/ using
+a local HTTP server and open /?demo. Demo and mock calibration downloads are disabled.
 
-## Flash the ESP32
+Run the dashboard tests with Node:
 
-1. In VS Code, open the `Application` folder (File → Open Folder) so PlatformIO finds `platformio.ini`.
-2. Plug the DevKitC in over USB. A new port called "Silicon Labs CP210x USB to UART Bridge (COM*n*)" should appear in Device Manager under Ports (COM & LPT). If it doesn't, try another cable (some only charge) or install Silicon Labs' CP210x driver.
-3. Upload one of the two builds. In the PlatformIO sidebar, use Project Tasks → *build name* → Upload, or run the command in a PlatformIO terminal:
+    node Application/tests/dashboard.test.cjs
 
-| Build | Command | Use it when |
-|---|---|---|
-| `mock` | `pio run -e mock -t upload` | No ATmega yet. The ESP32 makes up readings. |
-| `esp32dev` | `pio run -e esp32dev -t upload` | The ATmega is wired to GPIO16/17 and sends the `$M`/`$W` lines in `docs/spec.md` |
+Run from the repository root. The tests cover waveform math, current-zero and
+missing-data cases, packet deduplication, AVR reset handling, calibration bounds,
+stale calibration captures and CSV formatting.
 
-`pio device monitor` shows the ESP32's USB log (115200 baud), including every line it receives from the ATmega or the mock.
+## Build and flash
 
-The page lives inside the firmware, so there's no separate step to upload it (no "Upload Filesystem Image"). Upload again after you edit `web/index.html`.
+    pio run -e esp32dev
+    pio run -e esp32dev -t upload --upload-port COM11
 
-If the upload stops at `Connecting....` and fails, hold the BOOT button on the board while it connects. Close the serial monitor before uploading, because it holds the COM port.
+Run in Application/. Replace COM11 with the actual CP210x port and close any
+serial monitor first. The mock environment generates simulated packets and
+ignores the AVR UART. Use esp32dev for real hardware.
 
-Libraries: WiFi, WebServer and DNSServer come with the ESP32 Arduino core, so there's nothing extra to install. The page is compiled in, so there's no LittleFS upload either.
+The build script compresses web/index.html into web/index.html.gz and embeds
+the gzip asset. It is served with Content-Encoding: gzip; no filesystem upload
+is needed. Rebuild/upload after changing the page.
 
-## Open the dashboard on a phone
+Build and flash the AVR too for waveform, energy and calibration telemetry:
 
-1. Power the ESP32.
-2. On the phone, join the WiFi network **JouleObserver**. It has no password.
-3. The phone opens its "sign in to network" screen, showing the dashboard. On Android, tap the "Sign in to Wi-Fi network" notification if it doesn't open by itself.
-4. If nothing opens, go to http://192.168.4.1 in the browser. On Android, turn mobile data off first, or the phone may try to load it over 4G/5G.
+    ./Software/build-and-test.ps1
 
-On iPhone the dashboard opens in a sign-in sheet. Keep it open while you watch, because closing it can make iOS leave the network.
+Normal AVR output:
+Software/Joule_observer/Joule_observer/Debug/Joule_observer.hex
 
-A laptop works too. Join JouleObserver from the Windows WiFi menu, then open http://192.168.4.1. The laptop has no internet while it's connected.
+The independent display-test.hex build remains available. Existing AVR firmware
+sending three-field $M packets still works; energy, waveforms and calibration
+are unavailable until the AVR is updated.
 
-The status line under the title tells you what you're looking at:
+## Calibration
 
-| Status | Meaning |
-|---|---|
-| Live (green dot) | Real readings from the ATmega |
-| Simulated data from the mock firmware | The `mock` build is running |
-| Waiting for the measurement board | The ESP32 works, but no valid line has arrived on UART2. Check `pio device monitor`. No lines at all points to wiring, the level shifter, 9600 baud or a missing ground. Lines that show up there but don't reach the dashboard don't match `docs/spec.md`. |
-| No new readings for N s | The ATmega has stopped sending |
-| Can't reach the ESP32 | The phone has left the JouleObserver network |
+1. Flash both updated firmwares. Connect to JouleObserver and open Calibration.
+2. Use a stable load. Measure AVCC/AREF and enter the actual voltage.
+3. Compare the table's ADC input DC offset, AC RMS and peak-to-peak with a scope
+   at PC0/pin 23 (voltage) and PC1/pin 24 (current), relative to ground.
+4. Hold ADC capture to keep the comparison values still. Other measurements
+   continue updating.
+5. Enter independently measured LOAD RMS voltage/current, before conditioning,
+   to calculate each gain. Blank fields preserve the existing channel's gain.
+   A flat current input cannot be calibrated; fix that signal first.
+6. Download calibration.h, replace the same file in
+   Software/Joule_observer/Joule_observer/, rebuild and flash the AVR.
+
+The AVR remains an ATmega328PB at 2 MHz. There is no remote calibration write or
+AVR bootloader in the current firmware. These settings are compile-time constants
+in one file. Power and waveform scaling follow the new gains automatically.
+Changing the measured reference field alone updates the ADC-to-scope comparison;
+load gain requires a known load RMS reference. Gain correction cannot remove
+filter/trigger phase errors. Use RMS directly for distorted signals, rather
+than assuming a sine from peak-to-peak measurements.
+
+History is kept only in the current browser tab (up to 300 distinct measurements).
+Clear session history does not reset the AVR's energy total. Resetting the AVR
+resets its energy; the page starts a new session when it detects that reset.
+
+## Reference
+
+The related [CompSys209 project](https://jmw.nz/projects/CompSys209) informed
+the emphasis on actual cycle-aligned waveforms, RMS rather than peak-only
+estimates, CSV logging and gzip delivery. Our ADC uses an interrupt-driven
+capture and a preemptible display scan; its timing is checked separately.
+See docs/spec.md for exact packet formats and limitations.

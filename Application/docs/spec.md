@@ -1,158 +1,110 @@
-# Joule Observer data formats
+# UART and dashboard API
 
-How the readings get from the ATmega328P to a phone:
+ATmega328PB (2 MHz) -> USART0 TX/PD1 -> level shifter -> ESP32 GPIO16/UART2 RX.
+ESP32 GPIO17 TX is reserved for AVR PD0/RX; the AVR currently only transmits.
+9600 baud, 8N1, ASCII lines, LF or CRLF. Common ground is required.
+USB diagnostics are echoed at 115200 baud. ESP32 pins are not 5 V tolerant.
 
-```
-ATmega328P ──UART, 9600 8N1──▶ ESP32 UART2 (GPIO16) ──WiFi "JouleObserver"──▶ phone
-             $M and $W lines                         captive portal, GET /api/data (JSON)
-```
+## Packets
 
-Every value is a whole number in milli-units (mV, mA, mW) or microseconds, all the way from the ATmega to the page. Only the page divides by 1000, for display.
+Every numeric field is a decimal integer. Empty fields, overflow, trailing
+commas, non-numeric suffixes and invalid packet shapes are rejected. Unknown
+human-readable diagnostics are ignored. Malformed $ packets are counted.
+Lines longer than 1023 bytes are dropped as a whole.
 
-The ESP32 side is `src/main.cpp` and the page is `web/index.html`. If you change a format here, change both of those too.
+### Measurements
 
-## 1. ATmega → ESP32: UART lines
+    $M,<vrms_mV>,<irms_mA>,<power_mW>[,<energy_mWh>]
 
-| Setting | Value |
-|---|---|
-| Serial | 9600 baud, 8 data bits, no parity, 1 stop bit (the course UART spec) |
-| Wiring | ATmega TXD (PD1) → level shifter → ESP32 GPIO16 (UART2 RX). ESP32 GPIO17 (UART2 TX) → level shifter → ATmega RXD (PD0), wired but unused. Common ground. |
-| Text | ASCII, one message per line, ending in `\n` or `\r\n` |
+RMS voltage/current must be non-negative. Power may be signed. Optional energy
+must be non-negative. Older three-field packets keep working, with energy null.
+Additional numeric fields are validated and ignored. The new AVR sends energy
+from its own accumulator; the browser does not estimate missing energy.
 
-ESP32 pins are 3.3 V and not 5 V tolerant, so keep the level shifter. GPIO16 and 17 are free on the DevKitC-32E's WROOM-32E module. WROVER modules use them for PSRAM.
+### Local display mode
 
-Rules:
+    $D,<mode>
 
-- A message is `$`, a letter, then numbers, each after a comma: `$M,14020,431,5620`. Numbers are whole and decimal, optionally negative, with no spaces or decimal points.
-- Lines that aren't `$M` or `$W` messages are ignored. The ATmega can keep printing human-readable text for a terminal on the same UART.
-- A garbled message (too few numbers, or a field that isn't a number) is dropped whole. The dashboard keeps the last good one.
-- Extra numbers at the end of a `$M` line are ignored, so fields such as energy can be added later without breaking the ESP32.
-- Lines longer than 1023 characters are dropped.
+Exactly one digit: 0 voltage, 1 current, 2 power, 3 energy. The AVR repeats mode
+every 250 ms and on changes. The ESP32 uses this only for website metadata,
+showing mode unavailable after 1.5 s without a packet. It does not configure
+or drive any indicator GPIOs; GPIO25/26/27/32 are no longer assigned.
 
-### `$M`: readings
+The AVR's right-most digit (DS1) shows U/A/P/E for voltage/current/power/energy.
+The three numeric digits show V/A/W/Wh, respectively: 13.7U, 0.40A, 5.48P,
+0.12E. Precision adjusts to fit three digits, up to two decimals. U is the
+seven-segment voltage symbol. UART and website current remain in mA.
+UART is GPIO16, as confirmed by the user; the schematic's GPIO3 label was wrong.
 
-`$M,<vrms_mV>,<irms_mA>,<power_mW>`
+### Waveform
 
-| Field | Unit | Example |
-|---|---|---|
-| vrms_mV | mV | 14020 = 14.02 V |
-| irms_mA | mA | 431 |
-| power_mW | mW, real (average) power, negative if the current is reversed | 5620 = 5.62 W |
+    $W,<dt_us>,<v0_mV>,<i0_mA>,<v1_mV>,<i1_mA>,...
 
-The dashboard greys out readings more than 3 s old, so send one at least that often. Once a second, with the LCD update, is the natural rate.
+2–64 complete pairs are retained; extra pairs are validated then ignored. dt_us
+must be 1–1000000. Values are signed 32-bit integers (no silent int16 clipping).
 
-### `$W`: waveform snapshot
+The AVR sends the first 32 contiguous samples from each frozen 200-sample block,
+104 us apart, approximately once per second. Each block starts at a rising
+voltage zero crossing, but V and I are captured in separate cycles. A V×I
+waveform therefore assumes a stable periodic load. It is derived data, not a
+simultaneous two-channel acquisition. The scalar real power uses all 200 pairs.
+The display-test firmware sends fixed summaries without fabricated waveforms.
 
-`$W,<dt_us>,<v0>,<i0>,<v1>,<i1>,...`
+The ADC buffers remain frozen while the line is transmitted. Capture timeouts
+are measured from the actual rearm time, excluding preceding UART transmission.
+At typical lab values, waveform + raw diagnostics + calibration + summary/mode
+packets fit the 960-character/s UART budget.
 
-| Field | Unit |
-|---|---|
-| dt_us | µs between consecutive samples of the same channel |
-| v*k*, i*k* | mV and mA, in pairs. 2 to 64 pairs (any after the 64th are ignored), each value −32768 to 32767 |
+### Calibration
 
-- Start the snapshot at a rising zero crossing of the voltage (the zero-crossing detector gives you this). That way the trace stays still from one update to the next.
-- The page treats v*k* and i*k* as taken at the same moment. If the ADC alternates between channels, each current sample is really one conversion later than its voltage sample: 100 µs at 10 kHz, or 18° at 500 Hz. Correct for that in firmware if the phase on screen needs to be exact.
-- Suggested: 20 pairs at 200 µs, which is two 500 Hz cycles. 200 µs is the per-channel interval when a 10 kHz ADC alternates between V and I. More pairs give a smoother trace.
+    $C,<reference_mV>,<v_scale_x100>,<i_scale_x1000>,<v_min>,<v_max>,<v_mean_x100>,<v_rms_x10>,<i_min>,<i_max>,<i_mean_x100>,<i_rms_x10>
 
-### Example
+Exactly 11 fields. Reference is 1000–5500 mV; gains are 1–60000. Raw min/max
+must be 0–1023 with min <= max. Mean is in hundredths of an ADC count and lies
+between min/max. RMS is AC-only, in tenths of a count, after DC removal.
+These statistics cover the complete 200-sample blocks, not only the 32-point
+waveform snapshot.
 
-14.02 V, 431 mA and 5.62 W (power factor 0.93), two cycles:
+ADC input mV/count = reference_mV / 1024.
+Load mV/count = v_scale_x100 / 100.
+Load mA/count = i_scale_x1000 / 1000.
+Power scale (mW/count² x 10000) = round(v_scale_x100*i_scale_x1000/10000).
 
-```
-$M,14020,431,5620
-$W,200,0,-224,11654,152,18857,470,18857,608,11654,514,0,224,-11654,-152,-18857,-470,-18857,-608,-11654,-514,0,-224,11654,152,18857,470,18857,608,11654,514,0,224,-11654,-152,-18857,-470,-18857,-608,-11654,-514
-```
+The page uses raw counts to compare ADC pin signals to a scope and known LOAD
+RMS values to calculate gain constants. One bad/flat channel does not prevent
+calibrating the other with its reference left blank. Clip checks apply to the
+channel being adjusted. Calibration is a browser workflow generating
+calibration.h; it does not send settings back to the AVR.
 
-### UART budget
+## HTTP
 
-9600 baud carries about 960 characters a second. The two lines above are 229 characters (0.24 s), so one `$M` and one `$W` a second leaves room for human-readable text. Two of each a second is about the limit.
-
-### Sending from the ATmega
-
-This uses `USART_transmit()` and `USART_string()` from `firmware/UART_209/UART_209/main.c`. Each character waits for the UART, so a `$W` line keeps the main loop busy for about 0.2 s. Take samples in the ADC interrupt so that doesn't matter.
-
-```c
-// Prints a whole number, e.g. -1234, using 16-bit maths (fast at 2 MHz).
-void USART_int(int16_t x)
-{
-	char digits[5];
-	uint8_t n = 0;
-	uint16_t u = x;
-
-	if (x < 0)
-	{
-		USART_transmit('-');
-		u = -u;
-	}
-	do
-	{
-		digits[n++] = '0' + u % 10;
-		u /= 10;
-	} while (u);
-	while (n)
-	{
-		USART_transmit(digits[--n]);
-	}
-}
-
-void send_readings(int16_t vrms_mV, int16_t irms_mA, int16_t power_mW)
-{
-	USART_string("$M,");
-	USART_int(vrms_mV);
-	USART_transmit(',');
-	USART_int(irms_mA);
-	USART_transmit(',');
-	USART_int(power_mW);
-	USART_string("\r\n");
-}
-
-void send_waveform(int16_t dt_us, const int16_t *v_mV, const int16_t *i_mA, uint8_t pairs)
-{
-	USART_string("$W,");
-	USART_int(dt_us);
-	for (uint8_t k = 0; k < pairs; k++)
-	{
-		USART_transmit(',');
-		USART_int(v_mV[k]);
-		USART_transmit(',');
-		USART_int(i_mA[k]);
-	}
-	USART_string("\r\n");
-}
-```
-
-## 2. ESP32 → phone: WiFi
-
-| Setting | Value |
-|---|---|
-| Network | `JouleObserver`, open (no password). Set `WIFI_NAME` and `WIFI_PASSWORD` in `src/main.cpp` |
-| ESP32 address | 192.168.4.1 |
-| DNS | Every name the phone looks up resolves to 192.168.4.1 |
-
-### Captive portal
-
-When a phone joins a network, it fetches a known "am I online?" URL: `/generate_204` on Android, `/hotspot-detect.html` on iPhone, `/connecttest.txt` on Windows, and so on. The ESP32 points every name at itself and redirects every URL it doesn't serve to `http://192.168.4.1/`. The phone takes the redirect to mean it's on a sign-in network and opens its sign-in screen, which shows the dashboard.
-
-| Request | Response |
-|---|---|
-| `GET /` | The dashboard (`web/index.html`, built into the firmware) |
-| `GET /api/data` | Latest readings as JSON, below |
-| Anything else | 302 redirect to `http://192.168.4.1/` |
-
-### `GET /api/data`
-
-The page fetches this every 250 ms.
-
-```json
-{"source":"uart","age_ms":250,"vrms_mV":14020,"irms_mA":431,"power_mW":5620,
- "dt_us":200,"v_mV":[0,11654,18857,18857,11654,0,...],"i_mA":[-224,152,470,608,514,224,...]}
-```
+The ESP32 AP is JouleObserver (open, 192.168.4.1). DNS and unknown paths redirect
+to /. The root serves a gzip-compressed embedded HTML page with no external
+assets. /api/data returns JSON with no-store caching.
 
 | Field | Meaning |
 |---|---|
-| source | `"uart"`: real data from the ATmega. `"mock"`: the `mock` firmware build, made-up data. |
-| age_ms | ms since the last `$M` line, or `null` if none has arrived since the ESP32 started |
-| vrms_mV, irms_mA, power_mW | From the last `$M` line |
-| dt_us, v_mV, i_mA | From the last `$W` line. The arrays are empty until one arrives. |
+| source | uart or mock (browser file/?demo uses demo locally) |
+| age_ms | ms since last valid M packet, or null before the first |
+| sequence | Count of valid M packets, used to avoid duplicate history points |
+| epoch | Increments on an AVR BOOT marker |
+| uptime_ms | ESP32 uptime; a decrease also resets browser session history |
+| vrms_mV, irms_mA, power_mW | Last valid measurement |
+| energy_mWh | AVR total, or null for old three-field packets |
+| display_mode | 0–3, or -1 when stale/unavailable |
+| wave_sequence, wave_age_ms | Valid W count and age, or null age before one arrives |
+| dt_us, v_mV, i_mA | Latest waveform; empty arrays until a valid W packet |
+| invalid_packets, dropped_lines | Parser and oversized-line counters |
+| calibration | null, or object below |
 
-Opened straight from a file, the page makes up data in this same shape with `"source":"demo"`.
+Calibration object fields: age_ms, adc_reference_mV, voltage_scale_x100,
+current_scale_x1000, v_min, v_max, v_mean_x100, v_rms_x10, i_min, i_max,
+i_mean_x100, i_rms_x10.
+
+The page polls every 500 ms with a 2 s fetch timeout. Measurement and waveform
+freshness are independent (3 s threshold). A failed HTTP response never switches
+to demo data. Session history is browser-local, bounded to 300 distinct fresh
+measurement packets. Reset markers, falling energy or ESP32 uptime clear it.
+Apparent power = Vrms*Irms. PF is unavailable at zero apparent power or for a
+ratio outside [-1,1]. Frequency is estimated from waveform rising crossings,
+not hard-coded. Energy is a history chart; it has no AC waveform.

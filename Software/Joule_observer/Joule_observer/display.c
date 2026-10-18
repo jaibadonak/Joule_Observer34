@@ -6,17 +6,21 @@
  */
 
 #include "display.h"
-#include "common.h"
+
 #include <avr/interrupt.h>
+#include <util/atomic.h>
 
 //---------------------------- Display ----------------------------//
 // Segment patterns for 0-9: bit0 = a ... bit6 = g (bit7 = dp is added separately)
 static const uint8_t seg_pattern[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66,
 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
+// U (voltage), A (amps), P (watts), E (Wh). Seven segments cannot draw V/W cleanly.
+static const uint8_t quantity_pattern[DISPLAY_QUANTITIES] = {0x3E, 0x77, 0x73, 0x79};
 
 // Digit enable pin masks in scan order. Index 0 is the least significant (right-most) digit.
 // Stored as masks, not pin numbers, so the interrupt never needs a variable 1<<n.
-static const uint8_t digit_mask[DISPLAY_DIGITS] = {(1<<DS4), (1<<DS3), (1<<DS2), (1<<DS1)};
+// Bench confirmed DS1 is right-most and DS4 is left-most.
+static const uint8_t digit_mask[DISPLAY_DIGITS] = {(1<<DS1), (1<<DS2), (1<<DS3), (1<<DS4)};
 
 // Ready-to-shift patterns for every measurement, index 0 = least significant digit.
 // The interrupt only ever shifts these out, all the maths happens in display_set_number.
@@ -88,6 +92,7 @@ void display_init(void) {
 		for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) {
 			disp_characters[q][i] = SEG_DASH;
 		}
+		disp_characters[q][0] = quantity_pattern[q];
 	}
 	disp_position = 0;
 	disp_quantity = DISPLAY_VOLTAGE;
@@ -104,32 +109,33 @@ void display_set_number(uint8_t quantity, uint32_t number, uint8_t decimals) {
 	uint8_t pattern[DISPLAY_DIGITS];
 
 	if (quantity >= DISPLAY_QUANTITIES) return;
+	pattern[0] = quantity_pattern[quantity]; // DS1/right-most digit is always the suffix
 
-	if (number > 9999) {
-		for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) pattern[i] = SEG_DASH;
+	if (number > 999 || decimals > 2) {
+		for (uint8_t i = 1; i < DISPLAY_DIGITS; i++) pattern[i] = SEG_DASH;
 	}
 	else {
 		uint16_t n = (uint16_t)number;
 
-		for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) {
+		for (uint8_t i = 0; i < DISPLAY_DIGITS - 1; i++) {
 			// Blank leading zeros, but always show the digit just left of the dp (0.75, not .75)
-			if (n == 0 && i > decimals) pattern[i] = SEG_BLANK;
-			else                        pattern[i] = seg_pattern[n % 10];
+			if (n == 0 && i > decimals) pattern[i + 1] = SEG_BLANK;
+			else                        pattern[i + 1] = seg_pattern[n % 10];
 			n = n / 10;
 		}
 
-		if (decimals > 0 && decimals < DISPLAY_DIGITS) {
-			pattern[decimals] = pattern[decimals] | SEG_DP;
+		if (decimals > 0) {
+			pattern[decimals + 1] |= SEG_DP;
 		}
 	}
 
 	// Interrupts off while copying so the scan interrupt can't take its snapshot
-	// halfway through. (sei() turns them back on, hence "call from main".)
-	cli();
-	for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) {
-		disp_characters[quantity][i] = pattern[i];
-	}
-	sei();
+	// halfway through. Restore the caller's interrupt state afterwards.
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) {
+            disp_characters[quantity][i] = pattern[i];
+        }
+    }
 }
 
 // Negative readings (noise around zero) are shown as 0
@@ -143,20 +149,24 @@ static uint32_t divide_round(uint32_t n, uint32_t d) {
 	return (n + d / 2) / d;
 }
 
-void display_update(int32_t vrms_mV, int32_t ipk_mA, int32_t power_mW, int32_t energy_mWh) {
-	uint32_t energy = non_negative(energy_mWh);
-	uint8_t  energy_decimals = 3;
+// All inputs use milli-units; display V, A, W and Wh with up to two decimals.
+// Drop a decimal when the rounded number would exceed the three numeric digits.
+static void display_milli(uint8_t quantity, int32_t milli) {
+    uint32_t value = non_negative(milli);
+    uint32_t divisor = 10;
+    uint8_t decimals = 2;
+    while (divide_round(value, divisor) > 999 && decimals > 0) {
+        divisor *= 10;
+        decimals--;
+    }
+    display_set_number(quantity, divide_round(value, divisor), decimals);
+}
 
-	display_set_number(DISPLAY_VOLTAGE, divide_round(non_negative(vrms_mV), 10), 2);   // 14.00 V
-	display_set_number(DISPLAY_CURRENT, non_negative(ipk_mA), 0);                      // 841 mA
-	display_set_number(DISPLAY_POWER,   divide_round(non_negative(power_mW), 10), 2);  // 7.50 W
-
-	// Energy in Wh: 0.000 - 9.999, then lose a decimal each time it outgrows 4 digits
-	while (energy > 9999 && energy_decimals > 0) {
-		energy = divide_round(energy, 10);
-		energy_decimals--;
-	}
-	display_set_number(DISPLAY_ENERGY, energy, energy_decimals);
+void display_update(int32_t vrms_mV, int32_t irms_mA, int32_t power_mW, int32_t energy_mWh) {
+    display_milli(DISPLAY_VOLTAGE, vrms_mV);
+    display_milli(DISPLAY_CURRENT, irms_mA);
+    display_milli(DISPLAY_POWER, power_mW);
+    display_milli(DISPLAY_ENERGY, energy_mWh);
 }
 
 uint8_t display_current_quantity(void) {
@@ -167,10 +177,18 @@ uint8_t display_current_quantity(void) {
 //---------------------------- Scan interrupt ----------------------------//
 // Fires every 5 ms and draws one digit.
 ISR(TIMER0_COMPA_vect) {
+	// Bit-banging a frame tick can exceed one 104 us ADC interval. Let
+	// ADC/INT0 preempt it, but mask this source to prevent scan reentry.
+	TIMSK0 &= ~(1<<OCIE0A);
+	sei();
 	uint8_t position = disp_position;
 
 	// New frame: snapshot the measurement on screen so the whole frame is consistent
 	if (position == 0) {
+		if (disp_frames >= DISPLAY_SCROLL_FRAMES) {
+			disp_frames = 0;
+			disp_quantity = (disp_quantity + 1) % DISPLAY_QUANTITIES;
+		}
 		for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) {
 			disp_frame[i] = disp_characters[disp_quantity][i];
 		}
@@ -190,10 +208,8 @@ ISR(TIMER0_COMPA_vect) {
 
 		// A full frame has been drawn. Only change measurement here so no frame mixes two.
 		disp_frames++;
-		if (disp_frames >= DISPLAY_SCROLL_FRAMES) {
-			disp_frames = 0;
-			disp_quantity = (disp_quantity + 1) % DISPLAY_QUANTITIES;
-		}
 	}
 	disp_position = position;
+	cli();
+	TIMSK0 |= (1<<OCIE0A);
 }

@@ -7,12 +7,11 @@
 
  
 #include "uart.h"   
-#include "common.h"
-#include <avr/io.h>
 
-#ifndef F_CPU
-#define F_CPU 2000000UL
-#endif
+#include <avr/io.h>
+#include "config.h"
+#include "adc.h"
+#include "computation.h"
 
 #define UART_BAUD 9600UL
 
@@ -115,7 +114,8 @@ void uart_int32(int32_t value)
 
 void uart_send_measurements(int32_t vrms_mV,
                             int32_t irms_mA,
-                            int32_t power_mW)
+                            int32_t power_mW,
+                            uint32_t total_mWh)
 {
     // Start the message with "$M," to identify it as measurement data.
     uart_string("$M,");
@@ -134,8 +134,54 @@ void uart_send_measurements(int32_t vrms_mV,
 
     // Send power as an integer in milliwatts.
     uart_int32(power_mW);
+    uart_transmit(',');
+    uart_int32((int32_t)total_mWh);
 
     // End the message with carriage return and newline.
     // This lets the receiver recognise the end of the message.
+    uart_string("\r\n");
+}
+
+void uart_send_waveform(void) {
+    uint16_t offset_v = adc_offset(v_samples);
+    uint16_t offset_i = adc_offset(i_samples);
+    uart_string("$W,104");
+    for (uint8_t k = 0; k < 32; k++) {
+        int32_t v = ((int32_t)v_samples[k] - offset_v) * V_MV_PER_COUNT_X100 / 100L;
+        int32_t i = ((int32_t)i_samples[k] - offset_i) * I_MA_PER_COUNT_X1000 / 1000L;
+        uart_transmit(','); uart_int32(v);
+        uart_transmit(','); uart_int32(i);
+    }
+    uart_string("\r\n");
+}
+
+static void uart_calibration_channel(volatile uint16_t *block) {
+    uint16_t lo = 1023, hi = 0;
+    uint32_t total = 0;
+    for (uint16_t k = 0; k < samples; k++) {
+        uint16_t x = block[k];
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+        total += x;
+    }
+    uart_transmit(','); uart_int32(lo);
+    uart_transmit(','); uart_int32(hi);
+    uart_transmit(','); uart_int32(total * 100UL / samples);
+    uart_transmit(','); uart_int32(adc_rms_counts_x10(block));
+}
+
+void uart_send_calibration(void) {
+    uart_string("$C,"); uart_int32(ADC_REFERENCE_MV);
+    uart_transmit(','); uart_int32(V_MV_PER_COUNT_X100);
+    uart_transmit(','); uart_int32(I_MA_PER_COUNT_X1000);
+    uart_calibration_channel(v_samples);
+    uart_calibration_channel(i_samples);
+    uart_string("\r\n");
+}
+
+void uart_send_mode(uint8_t mode) {
+    if (mode >= 4) return;
+    uart_string("$D,");
+    uart_transmit('0' + mode);
     uart_string("\r\n");
 }

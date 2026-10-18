@@ -13,6 +13,7 @@
 #include <DNSServer.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include "uart_protocol.h"
 
 // ---- Settings ----------------------------------------------------------------
 
@@ -23,12 +24,17 @@ const int ATMEGA_RX_PIN = 16;  // UART2 RX, from the ATmega's TX via the level s
 const int ATMEGA_TX_PIN = 17;  // UART2 TX, to the ATmega's RX (not used yet)
 const unsigned long ATMEGA_BAUD = 9600;
 
+// Mode metadata for the website only; no ESP32 indicator GPIOs are driven.
+const uint32_t MODE_TIMEOUT_MS = 1500;
+int displayMode = -1;
+uint32_t modeAt = 0;
+
 const int MAX_PAIRS = 64;      // most waveform samples per channel in one $W line
 const size_t MAX_LINE = 1024;  // longer UART lines are dropped
 
 // web/index.html, built in by board_build.embed_files in platformio.ini
-extern const uint8_t page_start[] asm("_binary_web_index_html_start");
-extern const uint8_t page_end[] asm("_binary_web_index_html_end");
+extern const uint8_t page_start[] asm("_binary_web_index_html_gz_start");
+extern const uint8_t page_end[] asm("_binary_web_index_html_gz_end");
 
 WebServer server(80);
 DNSServer dns;
@@ -38,48 +44,74 @@ DNSServer dns;
 bool haveReadings = false;  // false until the first $M line arrives
 uint32_t readingsAt = 0;    // millis() when the last $M line arrived
 long vrms_mV = 0, irms_mA = 0, power_mW = 0;
+long total_mWh = 0;
+bool haveEnergy = false;
+uint32_t sequence = 0, waveSequence = 0, waveformAt = 0, streamEpoch = 1;
+uint32_t invalidPackets = 0, droppedLines = 0;
+bool haveCalibration = false;
+long calibration[11];
+uint32_t calibrationAt = 0;
+const char *CALIBRATION_KEYS[] = {"adc_reference_mV", "voltage_scale_x100", "current_scale_x1000",
+  "v_min", "v_max", "v_mean_x100", "v_rms_x10", "i_min", "i_max", "i_mean_x100", "i_rms_x10"};
 
 int pairs = 0;  // samples per channel in the last $W line
 long dt_us = 0;
-int16_t v_mV[MAX_PAIRS], i_mA[MAX_PAIRS];
+int32_t v_mV[MAX_PAIRS], i_mA[MAX_PAIRS];
 
 // ---- Reading the ATmega's lines --------------------------------------------------
-
-// Reads ",123,-45,..." into out[]. Returns how many numbers it read (at most
-// maxCount, any after that are ignored), or -1 if the text is garbled.
-int readNumbers(const char *text, long *out, int maxCount) {
-  int count = 0;
-  while (*text == ',' && count < maxCount) {
-    char *end;
-    out[count] = strtol(text + 1, &end, 10);
-    if (end == text + 1) return -1;  // empty field or not a number
-    count++;
-    text = end;
-  }
-  return (*text == '\0' || *text == ',') ? count : -1;
-}
 
 void handleLine(char *line) {
   Serial.println(line);  // echo to USB, so `pio device monitor` shows what arrived
 
-  if (strncmp(line, "$M", 2) == 0) {
-    long n[3];
-    if (readNumbers(line + 2, n, 3) != 3) return;
+  if (strncmp(line, "BOOT JouleObserver", 18) == 0) {
+    haveReadings = haveEnergy = false;
+    haveCalibration = false;
+    pairs = 0;
+    streamEpoch++;
+    displayMode = -1;
+  } else if (strncmp(line, "$D,", 3) == 0) {
+    // Exactly one digit: reject malformed, missing, extra or out-of-range fields.
+    int mode = parseDisplayMode(line);
+    if (mode < 0) { invalidPackets++; return; }
+    displayMode = mode;
+    modeAt = millis();
+  } else if (strncmp(line, "$M,", 3) == 0) {
+    long n[4];
+    int count = readNumbers(line + 2, n, 4);
+    if (count < 3 || n[0] < 0 || n[1] < 0 || (count >= 4 && n[3] < 0)) {
+      invalidPackets++; return;
+    }
     vrms_mV = n[0];
     irms_mA = n[1];
     power_mW = n[2];
+    haveEnergy = count >= 4;
+    if (haveEnergy) total_mWh = n[3];
     haveReadings = true;
     readingsAt = millis();
-  } else if (strncmp(line, "$W", 2) == 0) {
+    sequence++;
+  } else if (strncmp(line, "$W,", 3) == 0) {
     static long n[1 + 2 * MAX_PAIRS];
     int count = readNumbers(line + 2, n, 1 + 2 * MAX_PAIRS);
-    if (count < 5 || count % 2 == 0 || n[0] <= 0) return;  // dt plus 2 or more whole pairs
-    dt_us = n[0];
-    pairs = (count - 1) / 2;
-    for (int k = 0; k < pairs; k++) {
-      v_mV[k] = constrain(n[1 + 2 * k], -32768L, 32767L);
-      i_mA[k] = constrain(n[2 + 2 * k], -32768L, 32767L);
+    if (count < 5 || count % 2 == 0 || n[0] <= 0 || n[0] > 1000000L) {
+      invalidPackets++; return;
     }
+    dt_us = n[0];
+    pairs = min((count - 1) / 2, MAX_PAIRS);
+    for (int k = 0; k < pairs; k++) {
+      v_mV[k] = n[1 + 2 * k];
+      i_mA[k] = n[2 + 2 * k];
+    }
+    waveformAt = millis();
+    waveSequence++;
+  } else if (strncmp(line, "$C,", 3) == 0) {
+    long c[11];
+    int count = readNumbers(line + 2, c, 11);
+    if (!validCalibration(c, count)) { invalidPackets++; return; }
+    memcpy(calibration, c, sizeof calibration);
+    haveCalibration = true;
+    calibrationAt = millis();
+  } else if (line[0] == '$') {
+    invalidPackets++;
   }
   // Any other line (say, human-readable text for a terminal) is ignored.
 }
@@ -94,6 +126,7 @@ void feedByte(char c) {
     while (len > 0 && (line[len - 1] == '\r' || line[len - 1] == ' ')) len--;
     line[len] = '\0';
     if (!tooLong && len > 0) handleLine(line);
+    if (tooLong) droppedLines++;
     len = 0;
     tooLong = false;
   } else if (len < MAX_LINE - 1) {
@@ -113,6 +146,9 @@ void mockAtmega() {
   last = millis();
 
   float t = millis() / 1000.0f;
+  char modeLine[] = "$D,0";
+  modeLine[3] += (millis() / 3000) % 4;
+  handleLine(modeLine);
   float vrms = 14.0f + 0.3f * sinf(2 * PI * t / 23);
   float r = 50 + 27 * sinf(2 * PI * t / 30);  // load resistor, ohms
   float x = 2 * PI * 500 * 0.004f;            // 4 mH at 500 Hz, ohms
@@ -121,8 +157,10 @@ void mockAtmega() {
   float power = vrms * irms * cosf(phi);
 
   char text[512];
-  int len = snprintf(text, sizeof text, "$M,%ld,%ld,%ld\n$W,200", lroundf(vrms * 1000),
-                     lroundf(irms * 1000), lroundf(power * 1000));
+  static double mockEnergy = 0;
+  mockEnergy += power * 1000.0 * 0.5 / 3600.0;
+  int len = snprintf(text, sizeof text, "$M,%ld,%ld,%ld,%ld\n$W,200", lroundf(vrms * 1000),
+                     lroundf(irms * 1000), lroundf(power * 1000), lround(mockEnergy));
   for (int k = 0; k < 20; k++) {  // 2 cycles, 200 us apart, from a rising zero crossing
     float wt = 2 * PI * 500 * k * 200e-6f;
     len += snprintf(text + len, sizeof text - len, ",%ld,%ld",
@@ -131,6 +169,13 @@ void mockAtmega() {
   }
   len += snprintf(text + len, sizeof text - len, "\n");
   for (int k = 0; k < len; k++) feedByte(text[k]);
+  char calLine[180];
+  int vp = lroundf(vrms * sqrtf(2) * 1000 / 109.26f);
+  int ip = lroundf(irms * sqrtf(2) * 1000 / 3.877f);
+  snprintf(calLine, sizeof calLine, "$C,5000,10926,3877,%d,%d,42200,%ld,%d,%d,42200,%ld",
+    422 - vp, 422 + vp, lroundf(vrms * 10000 / 109.26f),
+    422 - ip, 422 + ip, lroundf(irms * 10000 / 3.877f));
+  handleLine(calLine);
 }
 #endif
 
@@ -138,13 +183,15 @@ void mockAtmega() {
 
 // GET /: the dashboard.
 void sendPage() {
+  server.sendHeader("Content-Encoding", "gzip");
+  server.sendHeader("Cache-Control", "no-cache");
   server.send_P(200, "text/html", (const char *)page_start, page_end - page_start);
 }
 
 // GET /api/data: the latest readings and waveform as JSON (see docs/spec.md).
 void sendData() {
   String json;
-  json.reserve(200 + 16 * pairs);
+  json.reserve(900 + 26 * pairs);
 #ifdef MOCK_ATMEGA
   json += "{\"source\":\"mock\",\"age_ms\":";
 #else
@@ -161,6 +208,27 @@ void sendData() {
   json += irms_mA;
   json += ",\"power_mW\":";
   json += power_mW;
+  json += ",\"energy_mWh\":";
+  if (haveEnergy && haveReadings) json += total_mWh;
+  else json += "null";
+  json += ",\"sequence\":"; json += sequence;
+  json += ",\"epoch\":"; json += streamEpoch;
+  json += ",\"uptime_ms\":"; json += millis();
+  json += ",\"display_mode\":"; json += displayMode;
+  json += ",\"wave_sequence\":"; json += waveSequence;
+  json += ",\"wave_age_ms\":";
+  if (pairs) json += millis() - waveformAt;
+  else json += "null";
+  json += ",\"invalid_packets\":"; json += invalidPackets;
+  json += ",\"dropped_lines\":"; json += droppedLines;
+  json += ",\"calibration\":";
+  if (haveCalibration) {
+    json += "{\"age_ms\":"; json += millis() - calibrationAt;
+    for (int k = 0; k < 11; k++) {
+      json += ",\""; json += CALIBRATION_KEYS[k]; json += "\":"; json += calibration[k];
+    }
+    json += '}';
+  } else json += "null";
   json += ",\"dt_us\":";
   json += dt_us;
   json += ",\"v_mV\":[";
@@ -212,11 +280,12 @@ void setup() {
 }
 
 void loop() {
-  dns.processNextRequest();
-  server.handleClient();
 #ifdef MOCK_ATMEGA
   mockAtmega();
 #else
   while (Serial2.available()) feedByte(Serial2.read());
 #endif
+  dns.processNextRequest();
+  server.handleClient();
+  if (displayMode >= 0 && millis() - modeAt >= MODE_TIMEOUT_MS) displayMode = -1;
 }

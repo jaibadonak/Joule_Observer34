@@ -26,6 +26,23 @@
 #define SEND_PERIOD_TICKS      31250    // one UART line every 1 s
 #define NO_SIGNAL_TICKS        15625    // no finished capture for 0.5 s = no signal, show zeros
 
+// DEBUG: send min / max / average of one raw ADC block
+static void send_raw_stats(const char *name, volatile uint16_t *block)
+{
+	uint16_t lo = 1023, hi = 0;
+	uint32_t total = 0;
+	for (uint16_t k = 0; k < samples; k++) {
+		if (block[k] < lo) lo = block[k];
+		if (block[k] > hi) hi = block[k];
+		total = total + block[k];
+	}
+	uart_string(name);
+	uart_string(" raw: min ");  uart_int32(lo);
+	uart_string(" max ");       uart_int32(hi);
+	uart_string(" avg ");       uart_int32((int32_t)(total / samples));
+	uart_string("\r\n");
+}
+
 int main(void)
 {
 	uint16_t last_ticks;
@@ -86,6 +103,8 @@ int main(void)
 			if (send_ticks >= SEND_PERIOD_TICKS) {
 				send_ticks = send_ticks - SEND_PERIOD_TICKS;
 				uart_send_measurements((int32_t)vrms_mV, (int32_t)irms_mA, (int32_t)power_mW);
+				send_raw_stats("V", v_samples);          // DEBUG: remove when working
+				send_raw_stats("I", i_samples);
 			}
 		}
 	}

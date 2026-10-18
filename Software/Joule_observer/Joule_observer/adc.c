@@ -64,8 +64,8 @@ ISR(ADC_vect) {
 
 void adc_init(void) {
 	// Set input direction and disable pull-ups explicitly, including after a bootloader.
-	DDRC &= ~((1<<PC0) | (1<<PC1));
-	PORTC &= ~((1<<PC0) | (1<<PC1));
+	DDRC &= ~((1<<PINC0) | (1<<PINC1));
+	PORTC &= ~((1<<PINC0) | (1<<PINC1));
 	DIDR0  = (1<<ADC0D) | (1<<ADC1D);                       // PC0, PC1 analogue only
 	ADMUX  = (1<<REFS0);                                    // AVCC reference, right adjusted, channel 0
 	ADCSRA = (1<<ADPS2);                                    // /16: 125 kHz ADC clock, 104 us per sample (9.6 kHz)

@@ -69,7 +69,7 @@ uint32_t energy_mWh(void);
 
 // Timer1 free runs at 20 MHz / 1024 = 19531 Hz (one tick = 51.2 us).
 // One milliwatt-hour is 3600 s x 31250 ticks/s = 112,500,000 mW x ticks.
-#define TICKS_PER_MWH            112500000UL
+#define TICKS_PER_MWH 56250000UL
 
 // DC offset of one block of samples, in ADC counts.
 // Calculated by taking the average of the collected points. This will more accurately represent the wave DC offset.

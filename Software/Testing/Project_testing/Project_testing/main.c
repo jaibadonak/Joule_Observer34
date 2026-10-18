@@ -19,7 +19,7 @@
  * (display.c can stay in the project, this version doesn't start the display)
  */
 
-#define F_CPU 20000000UL
+#define F_CPU 16000000UL
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -30,8 +30,8 @@
 #include "uart.h"
 
 // Times are counted in Timer1 ticks (32 us each, see calcs_init)
-#define SEND_PERIOD_TICKS    31250      // send every 1 s
-#define NO_SIGNAL_TICKS      15625      // no finished capture for 0.5 s = no signal, report zeros
+#define SEND_PERIOD_TICKS    15625      // send every 1 s
+#define NO_SIGNAL_TICKS      9765      // no finished capture for 0.5 s = no signal, report zeros
 
 // Print value / 10^decimals, e.g. print_fixed(1404, 2) prints 14.04
 static void print_fixed(uint32_t value, uint8_t decimals)

@@ -6,8 +6,8 @@ based on the newer former `Testing/Project_testing` implementation, using a
 separate measured DC offset for each channel and RMS current. The old duplicate
 and the placeholder UART project have been removed.
 
-Normal firmware now also sends the AVR energy total in $M, a 32-pair $W
-waveform snapshot, and full-block $C calibration statistics once per reading
+Normal firmware now also sends the AVR energy total in $M, a full 200-pair $Y
+raw waveform capture, and full-block $C calibration statistics once per telemetry
 interval. Flash the updated ESP32 firmware for the new dashboard. Calibration
 constants are in Joule_observer/Joule_observer/calibration.h; use the dashboard's
 Calibration panel to compare ADC pin measurements and download a replacement.
@@ -37,7 +37,8 @@ charged to the following capture.
   remainder. Power scaling also avoids signed multiplication overflow.
 - `$D,0` through `$D,3` report the real display scan mode to the website.
   ESP32 indicator outputs have been removed. The AVR shows a U/A/P/E suffix
-  on its right-most digit, leaving three numeric digits (V/A/W/Wh).
+  on its right-most digit. The one-second scroll shows Vrms, mA peak and W;
+  energy remains on UART/the website.
 - The display scan now allows ADC/INT0 to interrupt its bit-banging, while
   masking its own interrupt source to prevent reentry. Otherwise the display
   ISR can block more than one 104 us conversion and drop ADC samples.
@@ -64,8 +65,8 @@ segment order, digit polarity, or decimal-point wiring.
    AVR TX PD1 goes through the level shifter to ESP32 GPIO16. The user confirmed
    the attached schematic's RXD0/GPIO3 label was wrong. Keep common ground.
 2. For a display-only test, add `DISPLAY_SELF_TEST` to AVR compiler defined
-   symbols, rebuild, and flash. It scrolls **13.7U**, **0.40A**, **5.48P**, **0.12E**
-   every three seconds and sends `$M,13700,400,5480,123` plus mode messages.
+   symbols, rebuild, and flash. It scrolls **13.7U**, **566A** (mA peak), **5.48P**
+   every one second and sends `$M,13700,400,5480,123,566` plus mode messages.
    All calculations and sensor inputs are bypassed in this build.
 3. If those values look wrong locally but correct over UART, inspect DS1–DS4
    order (bench confirmed DS1 right, DS4 left; enables active-low), decimal point
@@ -157,3 +158,9 @@ it returned Windows error 31 (device not functioning), then it disappeared.
 No live readings were captured. Once its USB connection is stable, read COM11
 (or its newly assigned port) at 115200 baud; no ESP32 update is needed to echo
 the new AVR diagnostic lines.
+
+Calibration and full-capture viewer changes: see ../Application/docs/calibration.md.
+RMS arithmetic now retains rounded hundredths of ADC counts. Timer1 is extended
+to 32 bits so full 9600-baud captures cannot lose elapsed energy time.
+
+Latest specification audit: ../Application/docs/specification-audit.md.

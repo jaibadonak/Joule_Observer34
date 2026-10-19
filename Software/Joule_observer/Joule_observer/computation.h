@@ -23,10 +23,14 @@
 //			SUM(sample points) => divide by the number of samples
 // Pass v_samples or i_samples. Each channel gets its own offset.
 uint16_t adc_offset(volatile uint16_t *block);
+// DC estimate over complete cycles with interpolated boundaries; block-mean fallback.
+uint32_t adc_cycle_offset_x100(volatile uint16_t *block);
 uint16_t adc_rms_counts_x10(volatile uint16_t *block); // raw AC RMS before gain calibration
+uint16_t adc_rms_counts_x100(volatile uint16_t *block); // rounded hundredths of a count
 
 // Start Timer1 (free running). Read the time with TCNT1.
 void calcs_init(void);
+uint32_t calcs_ticks(void); // atomic extended Timer1 snapshot, handles pending overflow
 
 // Work on the blocks in v_samples[] and i_samples[]
 uint32_t calc_voltage_rms_mV(void);      // Vrms of the mains, in mV
@@ -35,7 +39,7 @@ uint32_t calc_current_peak_mA(void);     // peak load current, in mA
 uint32_t calc_power_mW(void);            // real power, mean of v x i, in mW
 
 // Energy: add power_mW for dt_ticks Timer1 ticks, read the total in mWh
-void     energy_add(uint32_t power_mW, uint16_t dt_ticks);
+void     energy_add(uint32_t power_mW, uint32_t dt_ticks);
 uint32_t energy_mWh(void);
 
 

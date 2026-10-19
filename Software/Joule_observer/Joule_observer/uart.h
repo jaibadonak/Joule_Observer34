@@ -27,9 +27,10 @@ void uart_int32(int32_t value);
 void uart_send_measurements(int32_t vrms_mV,
                             int32_t irms_mA,
                             int32_t power_mW,
-                            uint32_t energy_mWh);
+                            uint32_t energy_mWh,
+                            uint32_t peak_mA);
 
-// 32 contiguous samples/channel, 104 us apart, from frozen cycle-aligned blocks.
+// $Y: full 200-sample raw blocks, 104 us apart, with capture means and gains.
 void uart_send_waveform(void);
 void uart_send_calibration(void);
 

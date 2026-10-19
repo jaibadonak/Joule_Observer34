@@ -24,7 +24,7 @@
 <section class="intro"><div><div class="eyebrow">Measurement dashboard</div><h1>Electrical measurements</h1><p class="small">RMS voltage and current, real power and accumulated energy.</p></div><div class="mode">On the local display: <strong id="display-mode">—</strong></div></section>
 <section class="cards stale" id="readings" aria-label="Live electrical measurements">
  <article class="reading" style="--accent:var(--v)"><span class="label">RMS voltage</span><div class="number"><span id="vrms">—</span><span class="unit">V</span></div><canvas id="spark-v" class="spark" role="img" aria-label="Voltage history"></canvas><div class="range"><span id="min-v">MIN —</span><span id="max-v">MAX —</span></div></article>
- <article class="reading" style="--accent:var(--i)"><span class="label">RMS current</span><div class="number"><span id="irms">—</span><span class="unit">mA</span></div><canvas id="spark-i" class="spark" role="img" aria-label="Current history"></canvas><div class="range"><span id="min-i">MIN —</span><span id="max-i">MAX —</span></div></article>
+ <article class="reading" style="--accent:var(--i)"><span class="label">RMS current</span><div class="number"><span id="irms">—</span><span class="unit">mA</span></div><div class="small" id="current-peak">Peak — mA</div><canvas id="spark-i" class="spark" role="img" aria-label="Current history"></canvas><div class="range"><span id="min-i">MIN —</span><span id="max-i">MAX —</span></div></article>
  <article class="reading" style="--accent:var(--p)"><span class="label">Real power</span><div class="number"><span id="power">—</span><span class="unit">W</span></div><canvas id="spark-p" class="spark" role="img" aria-label="Power history"></canvas><div class="range"><span id="min-p">MIN —</span><span id="max-p">MAX —</span></div></article>
  <article class="reading" style="--accent:var(--e)"><span class="label">Total energy</span><div class="number"><span id="energy">—</span><span class="unit">Wh</span></div><canvas id="spark-e" class="spark" role="img" aria-label="Energy history"></canvas><div class="range"><span id="min-e">MIN —</span><span id="max-e">MAX —</span></div></article>
 </section>
@@ -35,7 +35,7 @@
  <div class="metric"><span class="label">Last reading</span><strong id="age">Waiting</strong></div>
 </section>
 <section class="scope" aria-labelledby="scope-title">
- <div class="scope-head"><div><div class="eyebrow">Oscilloscope</div><h2 id="scope-title">Waveforms and history</h2></div><div class="actions"><button id="pause" aria-pressed="false" type="button">Pause scope</button><button id="export" type="button" disabled>Export CSV</button></div></div>
+ <div class="scope-head"><div><div class="eyebrow">Oscilloscope</div><h2 id="scope-title">Signal viewer</h2></div><div class="actions"><button id="pause" aria-pressed="false" type="button">Pause scope</button><button id="export" type="button" disabled>Export CSV</button></div></div>
  <div class="controls">
   <div class="tabs" role="group" aria-label="Reading to explore">
    <button type="button" data-channel="v" aria-pressed="true"><span class="tab-dot" style="--accent:var(--v)"></span>Voltage</button>
@@ -43,52 +43,88 @@
    <button type="button" data-channel="p" aria-pressed="false"><span class="tab-dot" style="--accent:var(--p)"></span>Power</button>
    <button type="button" data-channel="e" aria-pressed="false"><span class="tab-dot" style="--accent:var(--e)"></span>Energy</button>
   </div>
-  <div class="right-controls"><div class="segments" role="group" aria-label="Chart view"><button id="view-wave" type="button" aria-pressed="true">Waveform</button><button id="view-history" type="button" aria-pressed="false">History</button></div><div class="actions"><label class="check"><input type="checkbox" id="overlay">Overlay V / I</label><select id="window" aria-label="Waveform time window"><option value="0">Full capture</option><option value="2">2 ms</option><option value="1">1 ms</option></select></div></div>
+  <div class="right-controls"><div class="segments" role="group" aria-label="Chart view"><button id="view-wave" type="button" aria-pressed="true">Waveform</button><button id="view-history" type="button" aria-pressed="false">RMS trend</button></div><div class="actions"><select id="signal-scale" aria-label="Waveform units"><option value="scaled">Calibrated signal</option><option value="raw">Raw ADC counts</option></select><label class="check"><input type="checkbox" id="overlay">Overlay V / I</label><select id="window" aria-label="Waveform time window"><option value="0">Full capture</option><option value="20">20 ms</option><option value="10">10 ms</option><option value="5">5 ms</option><option value="2">2 ms</option><option value="1">1 ms</option></select></div></div>
  </div>
+ <div class="controls"><p class="small" id="scope-help">Waveform uses measured samples. RMS trend uses full-block AVR readings.</p><div class="actions"><select id="trace-style" aria-label="Trace style"><option value="straight">Sample lines</option><option value="smooth">Smooth interpolation</option><option value="points">Sample points only</option><option value="steps" disabled>ADC steps</option></select><label class="check"><input type="checkbox" id="show-points" checked>Sample markers</label><label class="check"><input type="checkbox" id="rms-guide" checked>RMS guides</label></div></div>
  <div class="plot-wrap"><canvas id="scope" tabindex="0" role="img" aria-label="Electrical signal chart. Use left and right arrows to inspect points.">Select a reading to explore its waveform or recent history.</canvas></div>
  <div class="scope-note"><span id="capture-note">Waiting for a waveform snapshot.</span><strong id="cursor">Move over the chart to inspect a sample</strong></div>
+ <div class="scope-note"><span id="scope-rms">Waiting for a capture.</span></div>
  <div class="scope-stats"><div><span class="label" id="stat-label-1">Minimum</span><strong id="stat-1">—</strong></div><div><span class="label" id="stat-label-2">Maximum</span><strong id="stat-2">—</strong></div><div><span class="label" id="stat-label-3">RMS</span><strong id="stat-3">—</strong></div><div><span class="label" id="stat-label-4">Visible span</span><strong id="stat-4">—</strong></div></div>
 </section>
 <p class="status-message" id="message" role="status">Connecting to the instrument…</p>
 <section class="scope calibration" id="calibration-panel" aria-labelledby="cal-title" hidden style="margin-top:20px">
- <div class="scope-head"><div><div class="eyebrow">ATmega328PB · ADC0 / ADC1</div><h2 id="cal-title">Calibration mode</h2></div><div class="actions"><button type="button" id="hold-calibration" aria-pressed="false">Hold ADC capture</button><button type="button" id="download-calibration" disabled>Download calibration.h</button></div></div>
+ <div class="scope-head"><div><div class="eyebrow">ATmega328PB · ADC0 / ADC1</div><h2 id="cal-title">Calibrate voltage and current</h2></div><div class="actions"><button type="button" id="hold-calibration" aria-pressed="false">Hold averaged capture</button><button type="button" id="download-calibration" disabled>Download AVR settings</button></div></div>
  <div style="padding:0 22px 20px">
-  <p class="small">Use a stable load. Measure the AC component at PC0 (pin 23) and PC1 (pin 24), relative to ground, and compare with the table. DC offset is removed when calculating AC RMS.</p>
+  <ol class="small" style="padding-left:20px;line-height:1.9"><li><strong>Set up:</strong> use a steady AC input at your operating frequency. Measure the AVR AVCC supply relative to GND.</li><li><strong>Compare:</strong> enter the actual load AC RMS from a trusted meter or scope, before conditioning. Leave an unused channel blank.</li><li><strong>Capture:</strong> wait for 8 stable captures, then hold the averaged capture. For a wider range, record points at low, middle and high amplitudes.</li><li><strong>Apply:</strong> download the header, replace calibration.h in Microchip Studio, rebuild and flash the normal AVR firmware. Verify at another amplitude.</li></ol>
+  <p id="cal-progress" class="small" role="status" style="margin-top:12px">Collecting calibration captures…</p>
   <div class="cal-inputs">
-   <label>Measured AVCC / AREF (V)<input type="number" id="cal-vref" value="5.000" min="1" max="5.5" step="0.001"></label>
-   <label>Reference load voltage RMS (V)<input type="number" id="cal-voltage" placeholder="Leave blank to keep voltage gain" min="0.001" step="0.001"></label>
-   <label>Reference load current RMS (mA)<input type="number" id="cal-current" placeholder="Leave blank to keep current gain" min="0.001" step="0.001"></label>
+   <label>1. Measured AVR AVCC (V)<input type="number" id="cal-vref" value="5.000" min="1" max="5.5" step="0.001"></label>
+   <label>2. Actual load AC RMS voltage (V)<input type="number" id="cal-voltage" placeholder="Leave blank to keep voltage gain" min="0.001" step="0.001"></label>
+   <label>3. Actual load AC RMS current (mA)<input type="number" id="cal-current" placeholder="Leave blank to keep current gain" min="0.001" step="0.001"></label>
   </div>
-  <div style="overflow:auto"><table class="cal-table"><thead><tr><th>Input</th><th>ADC min / max</th><th>DC offset</th><th>AC RMS</th><th>Peak-to-peak</th></tr></thead><tbody><tr><th>Voltage · PC0</th><td id="cal-v-range">—</td><td id="cal-v-dc">—</td><td id="cal-v-rms">—</td><td id="cal-v-pp">—</td></tr><tr><th>Current · PC1</th><td id="cal-i-range">—</td><td id="cal-i-dc">—</td><td id="cal-i-rms">—</td><td id="cal-i-pp">—</td></tr></tbody></table></div>
+  <div class="actions" style="margin-bottom:16px"><button type="button" id="cal-add-point" disabled>Record reference point</button><button type="button" id="cal-clear-points">Clear reference points</button></div>
+  <p class="small" id="cal-points" style="margin-bottom:16px">No recorded points. Download uses the current averaged capture and entered reference.</p>
+  <div style="overflow:auto"><table class="cal-table"><thead><tr><th>Input</th><th>ADC min / max</th><th>ADC pin DC</th><th>ADC pin AC RMS</th><th>ADC pin peak-to-peak</th></tr></thead><tbody><tr><th>Voltage · PC0</th><td id="cal-v-range">—</td><td id="cal-v-dc">—</td><td id="cal-v-rms">—</td><td id="cal-v-pp">—</td></tr><tr><th>Current · PC1</th><td id="cal-i-range">—</td><td id="cal-i-dc">—</td><td id="cal-i-rms">—</td><td id="cal-i-pp">—</td></tr></tbody></table></div>
   <p id="cal-status" class="small" role="status" style="margin:14px 0">Waiting for raw ADC calibration telemetry.</p>
   <pre id="cal-output" aria-label="Proposed AVR calibration constants">No calibration data.</pre>
-  <p class="small">The reference values above describe the load, before signal conditioning. Enter RMS values measured directly; peak-to-peak divided by 2√2 is valid only for a sine wave. Keep the current reference blank while its input is flat.</p>
-  <p class="small" style="margin-top:10px">To apply: replace calibration.h in the AVR project, build, then flash the AVR. The ESP32 cannot write AVR settings over the existing transmit-only firmware. Power scaling updates automatically; gain calibration does not correct phase error. The local display keeps showing normal measurements.</p>
+  <p class="small">The table describes the conditioned signals at PC0 / pin 23 (voltage) and PC1 / pin 24 (current), relative to GND. Use the scope’s AC RMS measurement, excluding DC offset. The reference fields describe the load, before conditioning. Enter RMS values measured directly; peak-to-peak divided by 2√2 is valid only for a sine wave. Keep the current reference blank while its input is flat.</p>
+  <p class="small" style="margin-top:10px">To apply: replace calibration.h in the AVR project, build, then flash the AVR. The ESP32 cannot write AVR settings over the existing transmit-only firmware. Power scaling updates automatically; gain calibration does not correct phase error. Changing AVCC alone changes ADC-pin voltage conversion; load gains change only when you supply load references. Averaging improves repeatability, not the 10-bit ADC resolution. The 20.8 ms block may contain partial cycles; calibrate at the intended frequency and verify elsewhere.</p>
  </div>
 </section>
-<details><summary>Connection &amp; diagnostics</summary><div class="diagnostics"><div><span>Measurement packets</span><strong id="diag-packets">—</strong></div><div><span>Invalid / oversized lines</span><strong id="diag-errors">—</strong></div><div><span>Waveform age</span><strong id="diag-wave">—</strong></div><div><span>ESP32 uptime</span><strong id="diag-uptime">—</strong></div></div><p class="small" style="margin-top:14px">Waveforms use voltage-triggered blocks acquired in separate cycles. The power waveform is derived from V × I and assumes a stable periodic load.</p></details>
+<details><summary>Connection &amp; diagnostics</summary><div class="diagnostics"><div><span>Measurement packets</span><strong id="diag-packets">—</strong></div><div><span>Invalid / oversized lines</span><strong id="diag-errors">—</strong></div><div><span>Waveform age</span><strong id="diag-wave">—</strong></div><div><span>ESP32 uptime</span><strong id="diag-uptime">—</strong></div></div><p class="small" style="margin-top:14px">Waveforms use voltage-triggered blocks acquired in separate cycles. The power waveform is derived from V × I and assumes a stable periodic load. Changes in resistance or inductance between the two channel captures can invalidate that pairing. Gain calibration does not correct phase error.</p></details>
 <footer class="footer"><span id="history-note">Session history · 0 readings · stored in this tab</span><button type="button" id="clear" class="text-button">Clear session history</button><span>Team 34 · Joule Observer</span></footer>
 </main>
 <script id="metrics">
 'use strict';
 const Joule = {
- stats(values) { const a=values.filter(Number.isFinite); if(!a.length)return null; return {min:Math.min(...a),max:Math.max(...a),mean:a.reduce((s,x)=>s+x,0)/a.length,rms:Math.sqrt(a.reduce((s,x)=>s+x*x,0)/a.length)}; },
+ stats(values) { const a=values.filter(Number.isFinite); if(!a.length)return null; const mean=a.reduce((s,x)=>s+x,0)/a.length; return {min:Math.min(...a),max:Math.max(...a),mean,rms:Math.sqrt(a.reduce((s,x)=>s+x*x,0)/a.length),acRms:Math.sqrt(a.reduce((s,x)=>s+(x-mean)**2,0)/a.length)}; },
+ rawRms(c,ch) { return Number.isFinite(c[ch+'_rms_x100'])?c[ch+'_rms_x100']/100:c[ch+'_rms_x10']/10; },
+ averageCalibration(rows) {
+  if(!rows.length)return null;
+  const c={...rows[rows.length-1]},spread={};
+  for(const ch of ['v','i']) {
+   const values=rows.map(r=>this.rawRms(r,ch)),s=this.stats(values);
+   c[ch+'_rms_x100']=s.rms*100;c[ch+'_rms_x10']=s.rms*10;
+   c[ch+'_mean_x100']=rows.reduce((a,r)=>a+r[ch+'_mean_x100'],0)/rows.length;
+   c[ch+'_min']=Math.min(...rows.map(r=>r[ch+'_min']));c[ch+'_max']=Math.max(...rows.map(r=>r[ch+'_max']));
+   spread[ch]=s.mean>0?100*(s.max-s.min)/s.mean:0;
+  }
+  return{data:c,spread,count:rows.length};
+ },
+ curve(values,steps=8) {
+  if(values.length<2)return values.map((v,k)=>[k,v]);
+  const delta=values.slice(1).map((v,k)=>v-values[k]),m=values.map((v,k)=>k===0?delta[0]:k===values.length-1?delta[delta.length-1]:delta[k-1]*delta[k]<=0?0:2*delta[k-1]*delta[k]/(delta[k-1]+delta[k]));
+  const out=[];for(let k=0;k<values.length-1;k++)for(let j=0;j<steps;j++){const t=j/steps,t2=t*t,t3=t2*t;out.push([k+t,(2*t3-3*t2+1)*values[k]+(t3-2*t2+t)*m[k]+(-2*t3+3*t2)*values[k+1]+(t3-t2)*m[k+1]]);}out.push([values.length-1,values[values.length-1]]);return out;
+ },
+ fitCalibration(points,cfg) {
+  const result={cfg:{...cfg},errors:[],residual:{}};
+  for(const ch of ['v','i']) {
+   const a=points.filter(p=>p[ch]).map(p=>p[ch]);if(!a.length)continue;
+   const factor=ch==='v'?100000:1000;
+   result.cfg[ch]=Math.round(a.reduce((s,p)=>s+p.raw*p.ref*factor,0)/a.reduce((s,p)=>s+p.raw*p.raw,0));
+   result.residual[ch]=Math.max(...a.map(p=>100*Math.abs(p.raw*result.cfg[ch]/factor-p.ref)/p.ref));
+   if(result.cfg[ch]<1||result.cfg[ch]>60000)result.errors.push('Fitted '+ch+' gain is out of range.');
+   if(result.residual[ch]>2)result.errors.push((ch==='v'?'Voltage':'Current')+' points disagree by more than 2%. Check references and signal stability.');
+  }
+  return result;
+ },
  frequency(values,dt) { if(!(dt>0)||values.length<4)return null; const s=this.stats(values); if(!s||s.max-s.min<20)return null; const level=(s.min+s.max)/2,cross=[]; for(let k=1;k<values.length;k++)if(values[k-1]<=level&&values[k]>level)cross.push(k-1+(level-values[k-1])/(values[k]-values[k-1])); if(cross.length<2)return null; return 1e6*(cross.length-1)/((cross[cross.length-1]-cross[0])*dt); },
- valid(d) { return d&&['uart','mock','demo'].includes(d.source)&&(d.age_ms===null||(Number.isFinite(d.age_ms)&&d.age_ms>=0))&&['vrms_mV','irms_mA','power_mW'].every(k=>Number.isFinite(d[k]))&&d.vrms_mV>=0&&d.irms_mA>=0&&(d.energy_mWh==null||(Number.isFinite(d.energy_mWh)&&d.energy_mWh>=0)); },
- wave(d) { return d&&Number.isFinite(d.dt_us)&&d.dt_us>0&&d.dt_us<=1e6&&Array.isArray(d.v_mV)&&Array.isArray(d.i_mA)&&d.v_mV.length>=2&&d.v_mV.length<=64&&d.v_mV.length===d.i_mA.length&&d.v_mV.every(Number.isFinite)&&d.i_mA.every(Number.isFinite); },
+ valid(d) { return d&&['uart','mock','demo'].includes(d.source)&&(d.age_ms===null||(Number.isFinite(d.age_ms)&&d.age_ms>=0))&&['vrms_mV','irms_mA','power_mW'].every(k=>Number.isFinite(d[k]))&&d.vrms_mV>=0&&d.irms_mA>=0&&(d.ipeak_mA==null||(Number.isFinite(d.ipeak_mA)&&d.ipeak_mA>=0))&&(d.energy_mWh==null||(Number.isFinite(d.energy_mWh)&&d.energy_mWh>=0)); },
+ rawWave(d) { return this.wave(d)&&['v_adc','i_adc'].every(key=>Array.isArray(d[key])&&d[key].length===d.v_mV.length&&d[key].every(v=>Number.isInteger(v)&&v>=0&&v<=1023)); },
+ wave(d) { return d&&Number.isFinite(d.dt_us)&&d.dt_us>0&&d.dt_us<=1e6&&Array.isArray(d.v_mV)&&Array.isArray(d.i_mA)&&d.v_mV.length>=2&&d.v_mV.length<=200&&d.v_mV.length===d.i_mA.length&&d.v_mV.every(Number.isFinite)&&d.i_mA.every(Number.isFinite); },
  apparent(d) {return d.vrms_mV*d.irms_mA/1e6;},
  pf(d) {const s=this.apparent(d),r=d.power_mW/1000/s;return s>0&&Number.isFinite(r)&&Math.abs(r)<=1?r:null;},
  value(d,ch) {return ch==='v'?d.vrms_mV/1000:ch==='i'?d.irms_mA:ch==='p'?d.power_mW/1000:d.energy_mWh==null?null:d.energy_mWh/1000;},
  calibrate(c,input) {
  const errors=[],cfg={vref:Math.round(Number(input.vref)*1000),v:c.voltage_scale_x100,i:c.current_scale_x1000};
  if(!Number.isFinite(cfg.vref)||cfg.vref<1000||cfg.vref>5500)errors.push('AVCC must be between 1.000 and 5.500 V.');
- for(const [key,ref,raw,span,factor] of [['v',input.voltage,c.v_rms_x10,c.v_max-c.v_min,100000],['i',input.current,c.i_rms_x10,c.i_max-c.i_min,1000]]) {
+ for(const [key,ref,raw,span,factor] of [['v',input.voltage,this.rawRms(c,'v'),c.v_max-c.v_min,100000],['i',input.current,this.rawRms(c,'i'),c.i_max-c.i_min,1000]]) {
   if(ref==='')continue;
   const min=key==='v'?c.v_min:c.i_min,max=key==='v'?c.v_max:c.i_max;
   if(min<=1||max>=1022){errors.push((key==='v'?'Voltage':'Current')+' input is near a rail; check clipping.');continue;}
   if(!Number.isFinite(Number(ref))||Number(ref)<=0){errors.push('Reference values must be positive RMS measurements.');continue;}
-  if(!(raw>0)||span<2){errors.push((key==='v'?'Voltage':'Current')+' input has too little AC variation to calibrate.');continue;}
-  cfg[key]=Math.round(Number(ref)*factor/(raw/10));
+  if(!(raw>=5)||span<16){errors.push((key==='v'?'Voltage':'Current')+' signal is too small: use at least 5 RMS counts and 16 counts peak-to-peak.');continue;}
+  cfg[key]=Math.round(Number(ref)*factor/raw);
  }
 
  if(![cfg.v,cfg.i].every(v=>Number.isInteger(v)&&v>=1&&v<=60000))errors.push('Calculated gain is outside the supported range.');
@@ -108,6 +144,7 @@ const colors={v:'#f7bd69',i:'#69baff',p:'#b6a0ff',e:'#65d6b0'};
 const units={v:'V',i:'mA',p:'W',e:'Wh'};
 const names=['Voltage','Current','Power','Energy'];
 let latest=null,received=0,networkError=false,history=[],channel='v',view='wave',frozen=null,cursor=-1,plot=null;
+let preferredTrace='straight';
 let seenSequence=null,epoch=null,deviceUptime=null;
 const canvas=$('scope');
 function fmt(x,d=2){return Number.isFinite(x)?x.toFixed(d):'—';}
@@ -132,7 +169,7 @@ function resetHistory(){history=[];seenSequence=null;drawCards();draw();}
 function accept(d){
  if(!Joule.valid(d))throw Error('Invalid measurement response');
  const reset=latest&&(d.epoch!==epoch||(Number.isFinite(d.uptime_ms)&&deviceUptime!==null&&d.uptime_ms<deviceUptime)||(d.energy_mWh!=null&&latest.energy_mWh!=null&&d.energy_mWh<latest.energy_mWh));
- if(reset){history=[];seenSequence=null;frozen=null;calibrationHeld=null;$('hold-calibration').textContent='Hold ADC capture';$('hold-calibration').setAttribute('aria-pressed','false');$('pause').textContent='Pause scope';$('pause').setAttribute('aria-pressed','false');}
+ if(reset){history=[];seenSequence=null;frozen=null;calibrationHeld=null;calibrationRows=[];calibrationPoints=[];calibrationSeen=null;$('hold-calibration').textContent='Hold averaged capture';$('hold-calibration').setAttribute('aria-pressed','false');$('pause').textContent='Pause scope';$('pause').setAttribute('aria-pressed','false');}
  epoch=d.epoch;deviceUptime=Number.isFinite(d.uptime_ms)?d.uptime_ms:null;latest=d;received=Date.now();networkError=false;
  if(d.age_ms!==null&&d.age_ms<=STALE&&d.sequence!==seenSequence){
   const t=received-d.age_ms;
@@ -140,11 +177,12 @@ function accept(d){
   if(history.length>MAX_HISTORY)history.shift();seenSequence=d.sequence;
  }
  const available=d.age_ms!==null;
+ $('current-peak').textContent='Peak '+(available&&Number.isFinite(d.ipeak_mA)?fmt(d.ipeak_mA,0):'—')+' mA';
  $('vrms').textContent=available?fmt(d.vrms_mV/1000):'—';$('irms').textContent=available?fmt(d.irms_mA,0):'—';$('power').textContent=available?fmt(d.power_mW/1000):'—';$('energy').textContent=available?fmt(Joule.value(d,'e'),3):'—';
  $('apparent').textContent=available?fmt(Joule.apparent(d))+' VA':'— VA';$('pf').textContent=available?fmt(Joule.pf(d)):'—';
- $('display-mode').textContent=d.display_mode>=0&&d.display_mode<4?names[d.display_mode]:'—';
+ $('display-mode').textContent=d.display_mode>=0&&d.display_mode<4?['Voltage RMS','Current peak (mA)','Power','Energy'][d.display_mode]:'—';
  $('diag-packets').textContent=String(d.sequence??'—');$('diag-errors').textContent=String(d.invalid_packets??0)+' / '+String(d.dropped_lines??0);$('diag-uptime').textContent=Number.isFinite(d.uptime_ms)?duration(d.uptime_ms):'—';
- refreshStatus();drawCards();draw();updateCalibration();
+ collectCalibration(d);refreshStatus();drawCards();draw();updateCalibration();
 }
 async function poll(){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),2000);
@@ -153,29 +191,58 @@ async function poll(){
  finally{clearTimeout(timer);setTimeout(poll,500);}
 }
 let calibrationConfig=null,calibrationLoaded=false,calibrationHeld=null;
+let calibrationRows=[],calibrationPoints=[],calibrationSeen=null,calibrationSignature=null;
+const CAL_CAPTURES=8;
+function collectCalibration(d){
+ const c=d.calibration;if(!c||!Number.isFinite(c.age_ms)||c.age_ms>STALE||d.source!=='uart')return;
+ const signature=[d.epoch,c.adc_reference_mV,c.voltage_scale_x100,c.current_scale_x1000].join('/');
+ if(signature!==calibrationSignature){calibrationRows=[];calibrationPoints=[];calibrationHeld=null;calibrationSeen=null;calibrationSignature=signature;$('hold-calibration').textContent='Hold averaged capture';$('hold-calibration').setAttribute('aria-pressed','false');}
+ const seq=c.sequence??d.wave_sequence??d.sequence;if(seq===calibrationSeen)return;calibrationSeen=seq;
+ calibrationRows.push({...c});if(calibrationRows.length>CAL_CAPTURES)calibrationRows.shift();
+}
+function calibrationSnapshot(){return calibrationHeld||Joule.averageCalibration(calibrationRows);}
+function calibrationInputs(){return{vref:$('cal-vref').value,voltage:$('cal-voltage').value,current:$('cal-current').value};}
+function calibrationErrors(snapshot,inputs){
+ const errors=[];
+ if(!snapshot||snapshot.count<CAL_CAPTURES)errors.push('Wait for 8 distinct captures.');
+ if(snapshot)for(const [ch,ref] of [['v',inputs.voltage],['i',inputs.current]])if(ref!==''&&snapshot.spread[ch]>1)errors.push((ch==='v'?'Voltage':'Current')+' changed by more than 1%. Stabilise the input before capturing.');
+ return errors;
+}
 function updateCalibration(){
- const c=calibrationHeld?calibrationHeld.data:latest&&latest.calibration,valid=c&&['adc_reference_mV','voltage_scale_x100','current_scale_x1000','v_min','v_max','v_mean_x100','v_rms_x10','i_min','i_max','i_mean_x100','i_rms_x10','age_ms'].every(k=>Number.isFinite(c[k]));
- const fresh=valid&&(calibrationHeld||c.age_ms+Date.now()-received<=STALE)&&ageOf()!==null&&ageOf()<=STALE&&!networkError;
- $('download-calibration').disabled=true;calibrationConfig=null;
- $('hold-calibration').disabled=!valid;
+ $('download-calibration').disabled=true;$('cal-add-point').disabled=true;calibrationConfig=null;
+ const live=latest&&latest.calibration,snapshot=calibrationSnapshot(),c=snapshot?snapshot.data:live;
+ const valid=c&&['adc_reference_mV','voltage_scale_x100','current_scale_x1000','v_min','v_max','v_mean_x100','v_rms_x10','i_min','i_max','i_mean_x100','i_rms_x10'].every(k=>Number.isFinite(c[k]));
+ const fresh=live&&Number.isFinite(live.age_ms)&&live.age_ms+Date.now()-received<=STALE&&ageOf()!==null&&ageOf()<=STALE&&!networkError;
+ $('hold-calibration').disabled=!snapshot||snapshot.count<CAL_CAPTURES||!fresh;
+ $('cal-progress').textContent=snapshot?snapshot.count+' / '+CAL_CAPTURES+' captures · voltage variation '+fmt(snapshot.spread.v,2)+'% · current variation '+fmt(snapshot.spread.i,2)+'%'+(calibrationHeld?' · HELD':' · rolling average'):'Waiting for live ADC statistics. Averaging uses distinct captures only.';
  if(!valid){$('cal-status').textContent='No raw calibration data. Flash the updated AVR firmware to send $C packets.';return;}
  if(!calibrationLoaded){$('cal-vref').value=(c.adc_reference_mV/1000).toFixed(3);calibrationLoaded=true;}
  const ref=Number($('cal-vref').value)*1000;
- for(const ch of ['v','i']) {
+ for(const ch of ['v','i']){
   $('cal-'+ch+'-range').textContent=c[ch+'_min']+' / '+c[ch+'_max'];
   $('cal-'+ch+'-dc').textContent=fmt(c[ch+'_mean_x100']/100*ref/1024/1000,3)+' V';
-  $('cal-'+ch+'-rms').textContent=fmt(c[ch+'_rms_x10']/10*ref/1024,2)+' mV';
+  $('cal-'+ch+'-rms').textContent=fmt(Joule.rawRms(c,ch)*ref/1024,2)+' mV';
   $('cal-'+ch+'-pp').textContent=fmt((c[ch+'_max']-c[ch+'_min'])*ref/1024,2)+' mV';
  }
- const result=Joule.calibrate(c,{vref:$('cal-vref').value,voltage:$('cal-voltage').value,current:$('cal-current').value});
- if(!fresh)result.errors.push('Calibration capture is stale. Wait for a fresh packet.');
- if(latest.source!=='uart')result.errors.push('Simulated data: calibration downloads are disabled.');
- $('cal-status').textContent=result.errors.length?result.errors.join(' '):(c.i_max===c.i_min?'Current input is flat. Voltage calibration is available; current gain will be kept.':'Fresh 200-sample blocks. Compare the ADC input values above with your scope.');
- $('cal-output').textContent=['ADC_REFERENCE_MV = '+result.cfg.vref,'V_MV_PER_COUNT_X100 = '+result.cfg.v,'I_MA_PER_COUNT_X1000 = '+result.cfg.i,'P_MW_PER_COUNT2_X10000 = '+Math.round(result.cfg.v*result.cfg.i/10000)].join('\n');
- if(calibrationHeld)$('cal-status').textContent='Held at '+new Date(calibrationHeld.at).toLocaleTimeString()+'. '+$('cal-status').textContent;
- if(!result.errors.length){calibrationConfig=result.cfg;$('download-calibration').disabled=false;}
+ const inputs=calibrationInputs(),single=Joule.calibrate(c,inputs),errors=[];
+ if(!fresh)errors.push('Live calibration telemetry is stale or disconnected.');
+ if(latest.source!=='uart')errors.push('Simulated data: calibration downloads are disabled.');
+ const pointErrors=[...errors,...single.errors,...calibrationErrors(snapshot,inputs)];
+ const hasReference=inputs.voltage!==''||inputs.current!=='';
+ $('cal-add-point').disabled=pointErrors.length>0||!hasReference;
+ let result=single;
+ if(calibrationPoints.length){result=Joule.fitCalibration(calibrationPoints,{vref:single.cfg.vref,v:c.voltage_scale_x100,i:c.current_scale_x1000});if(!Number.isFinite(result.cfg.vref)||result.cfg.vref<1000||result.cfg.vref>5500)result.errors.push('AVCC must be between 1.000 and 5.500 V.');}
+ else {errors.push(...calibrationErrors(snapshot,inputs));if(!hasReference)errors.push('Enter a load RMS reference for at least one channel.');}
+ errors.push(...result.errors);
+ $('cal-status').textContent=errors.length?errors.join(' '):(calibrationPoints.length?'Ready: download uses the recorded reference points. New entries are used only after Record reference point.':'Ready: download uses this averaged capture. Leave current blank while its input is flat.');
+ const changes=['v','i'].map(ch=>(ch==='v'?'Voltage':'Current')+' gain '+fmt(100*(result.cfg[ch]/(ch==='v'?c.voltage_scale_x100:c.current_scale_x1000)-1),3)+'%');
+ $('cal-output').textContent=[...changes,'ADC_REFERENCE_MV = '+result.cfg.vref,'V_MV_PER_COUNT_X100 = '+result.cfg.v,'I_MA_PER_COUNT_X1000 = '+result.cfg.i,'P_MW_PER_COUNT2_X10000 = '+Math.round(result.cfg.v*result.cfg.i/10000),...(result.residual?Object.entries(result.residual).map(([ch,error])=>(ch==='v'?'Voltage':'Current')+' maximum reference discrepancy: '+fmt(error,3)+'%'):[])].join('\n');
+ $('cal-points').textContent=calibrationPoints.length?calibrationPoints.length+' recorded point(s). '+calibrationPoints.map((p,k)=>(k+1)+': '+['v','i'].filter(ch=>p[ch]).map(ch=>fmt(p[ch].ref,3)+(ch==='v'?' V':' mA')).join(' / ')).join('; ')+' · Fit is through zero after AC offset removal.':'No recorded points. Download uses the current averaged capture and entered reference.';
+ if(!errors.length){calibrationConfig=result.cfg;$('download-calibration').disabled=false;}
 }
-$('hold-calibration').addEventListener('click',()=>{if(calibrationHeld)calibrationHeld=null;else if(latest&&latest.calibration&&latest.calibration.age_ms+Date.now()-received<=STALE)calibrationHeld={data:JSON.parse(JSON.stringify(latest.calibration)),at:Date.now()};$('hold-calibration').textContent=calibrationHeld?'Resume ADC capture':'Hold ADC capture';$('hold-calibration').setAttribute('aria-pressed',String(!!calibrationHeld));updateCalibration();});
+$('hold-calibration').addEventListener('click',()=>{if(calibrationHeld)calibrationHeld=null;else {const s=Joule.averageCalibration(calibrationRows);if(s&&s.count>=CAL_CAPTURES)calibrationHeld={...s,at:Date.now()};}$('hold-calibration').textContent=calibrationHeld?'Resume averaging':'Hold averaged capture';$('hold-calibration').setAttribute('aria-pressed',String(!!calibrationHeld));updateCalibration();});
+$('cal-add-point').addEventListener('click',()=>{updateCalibration();if($('cal-add-point').disabled)return;const s=calibrationSnapshot(),inputs=calibrationInputs(),point={};for(const [ch,ref] of [['v',inputs.voltage],['i',inputs.current]])if(ref!=='')point[ch]={raw:Joule.rawRms(s.data,ch),ref:Number(ref)};calibrationPoints.push(point);calibrationHeld=null;calibrationRows=[];$('hold-calibration').textContent='Hold averaged capture';$('hold-calibration').setAttribute('aria-pressed','false');updateCalibration();});
+$('cal-clear-points').addEventListener('click',()=>{calibrationPoints=[];updateCalibration();});
 $('calibration-toggle').addEventListener('click',()=>{const panel=$('calibration-panel');panel.hidden=!panel.hidden;$('calibration-toggle').setAttribute('aria-pressed',String(!panel.hidden));if(!panel.hidden)panel.scrollIntoView({behavior:'smooth',block:'start'});updateCalibration();});
 for(const id of ['cal-vref','cal-voltage','cal-current'])$(id).addEventListener('input',updateCalibration);
 $('download-calibration').addEventListener('click',()=>{updateCalibration();if(!calibrationConfig)return;const blob=new Blob([Joule.header(calibrationConfig)],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='calibration.h';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
@@ -183,8 +250,8 @@ let demoSeq=0,demoEnergy=0,demoLast=performance.now();
 function demoData(){
  const now=performance.now(),t=now/1000,volts=13.8+.17*Math.sin(t/9),r=42+16*Math.sin(t/15),x=2*Math.PI*500*.004,amps=volts/Math.hypot(r,x),phi=Math.atan2(x,r),power=volts*amps*Math.cos(phi);
  demoEnergy+=power*(now-demoLast)/3600;demoLast=now;const v=[],i=[];
- for(let k=0;k<48;k++){const wt=2*Math.PI*500*k*.000104;v.push(Math.round(1000*Math.SQRT2*volts*Math.sin(wt)));i.push(Math.round(1000*Math.SQRT2*amps*Math.sin(wt-phi)));}
- return{source:'demo',age_ms:0,sequence:++demoSeq,epoch:1,uptime_ms:Math.round(now),vrms_mV:Math.round(volts*1000),irms_mA:Math.round(amps*1000),power_mW:Math.round(power*1000),energy_mWh:Math.floor(demoEnergy),display_mode:Math.floor(t/3)%4,wave_sequence:demoSeq,wave_age_ms:0,dt_us:104,v_mV:v,i_mA:i,invalid_packets:0,dropped_lines:0,calibration:{age_ms:0,adc_reference_mV:5000,voltage_scale_x100:10926,current_scale_x1000:3877,v_min:422-Math.round(Math.SQRT2*volts*1000/109.26),v_max:422+Math.round(Math.SQRT2*volts*1000/109.26),v_mean_x100:42200,v_rms_x10:Math.round(volts*10000/109.26),i_min:422-Math.round(Math.SQRT2*amps*1000/3.877),i_max:422+Math.round(Math.SQRT2*amps*1000/3.877),i_mean_x100:42200,i_rms_x10:Math.round(amps*10000/3.877)}};
+ for(let k=0;k<200;k++){const wt=2*Math.PI*500*k*.000104;v.push(Math.round(1000*Math.SQRT2*volts*Math.sin(wt)));i.push(Math.round(1000*Math.SQRT2*amps*Math.sin(wt-phi)));}
+ return{source:'demo',age_ms:0,sequence:++demoSeq,epoch:1,uptime_ms:Math.round(now),vrms_mV:Math.round(volts*1000),irms_mA:Math.round(amps*1000),ipeak_mA:Math.round(amps*1000*Math.SQRT2),power_mW:Math.round(power*1000),energy_mWh:Math.floor(demoEnergy),display_mode:Math.floor(t)%3,wave_sequence:demoSeq,wave_age_ms:0,dt_us:104,v_mV:v,i_mA:i,v_adc:v.map(x=>Math.max(0,Math.min(1023,Math.round(422+x/109.26)))),i_adc:i.map(x=>Math.max(0,Math.min(1023,Math.round(422+x/3.877)))),invalid_packets:0,dropped_lines:0,calibration:{age_ms:0,adc_reference_mV:5000,voltage_scale_x100:10926,current_scale_x1000:3877,v_min:422-Math.round(Math.SQRT2*volts*1000/109.26),v_max:422+Math.round(Math.SQRT2*volts*1000/109.26),v_mean_x100:42200,v_rms_x10:Math.round(volts*10000/109.26),i_min:422-Math.round(Math.SQRT2*amps*1000/3.877),i_max:422+Math.round(Math.SQRT2*amps*1000/3.877),i_mean_x100:42200,i_rms_x10:Math.round(amps*10000/3.877)}};
 }
 function setupCanvas(c){const w=c.clientWidth,h=c.clientHeight,ratio=Math.min(devicePixelRatio||1,2);c.width=Math.round(w*ratio);c.height=Math.round(h*ratio);const ctx=c.getContext('2d');ctx.setTransform(ratio,0,0,ratio,0,0);return{ctx,w,h};}
 function path(ctx,points,color,width=2){if(!points.length)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineJoin='round';ctx.beginPath();points.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();}
@@ -198,40 +265,62 @@ function drawCards(){
 function chartData(){
  const d=frozen?frozen.data:latest,rows=frozen?frozen.history:history,isTrend=view==='history'||channel==='e';
  if(isTrend){const valid=rows.filter(r=>Number.isFinite(r[channel]));return{trend:true,values:valid.map(r=>r[channel]),times:valid.map(r=>r.t),d,rows:valid};}
- if(!Joule.wave(d))return{trend:false,values:[],times:[],d};
+ const raw=$('signal-scale').value==='raw'&&(channel==='v'||channel==='i');
+ if(!Joule.wave(d)||(raw&&!Joule.rawWave(d)))return{trend:false,raw,values:[],times:[],d};
  let n=d.v_mV.length;const windowMs=Number($('window').value);if(windowMs)n=Math.min(n,Math.floor(windowMs*1000/d.dt_us)+1);
- const values=Array.from({length:n},(_,k)=>channel==='v'?d.v_mV[k]/1000:channel==='i'?d.i_mA[k]:d.v_mV[k]*d.i_mA[k]/1e6);
- return{trend:false,values,times:values.map((_,k)=>k*d.dt_us/1000),d};
+ const values=Array.from({length:n},(_,k)=>raw?(channel==='v'?d.v_adc[k]:d.i_adc[k]):channel==='v'?d.v_mV[k]/1000:channel==='i'?d.i_mA[k]:d.v_mV[k]*d.i_mA[k]/1e6);
+ return{trend:false,raw,values,times:values.map((_,k)=>k*d.dt_us/1000),d};
 }
 function draw(){
- const{ctx,w,h}=setupCanvas(canvas),data=chartData(),values=data.values,times=data.times,s=Joule.stats(values),overlay=!data.trend&&channel!=='p'&&$('overlay').checked&&Joule.wave(data.d);
- $('view-wave').disabled=channel==='e';$('window').disabled=data.trend;$('overlay').disabled=data.trend||channel==='p';$('view-wave').setAttribute('aria-pressed',String(!data.trend));$('view-history').setAttribute('aria-pressed',String(data.trend));
+ const{ctx,w,h}=setupCanvas(canvas),data=chartData(),values=data.values,times=data.times,s=Joule.stats(values),overlay=!data.raw&&!data.trend&&channel!=='p'&&$('overlay').checked&&Joule.wave(data.d);
+ const unit=data.raw?'counts':units[channel],precision=data.raw?0:channel==='e'?3:channel==='i'?0:2;
+ $('signal-scale').disabled=data.trend||channel==='p';
+ $('trace-style').disabled=data.trend||data.raw;$('show-points').disabled=data.trend;$('rms-guide').disabled=data.trend||data.raw||channel==='p'||overlay;
+ $('view-history').textContent=(channel==='v'||channel==='i')?'RMS trend':'History';
+ $('scope-help').textContent=data.trend?'RMS trend uses full 200-sample AVR readings; power and energy use their recorded summaries.':data.raw?'Raw ADC: original counts with DC bias, on a fixed 0–1023 axis.':$('trace-style').value==='smooth'?'Smooth interpolation passes through measured samples. Statistics and cursor use original samples.':'Calibrated AC waveform: DC bias removed using complete cycles when available. Sample markers show measured values.';
+ const fullValues=data.d&&Joule.wave(data.d)?(channel==='v'?data.d.v_mV.map(v=>v/1000):channel==='i'?data.d.i_mA:[]):[],fullStats=Joule.stats(fullValues);
+ const avrRms=data.d&&(channel==='v'?data.d.vrms_mV/1000:channel==='i'?data.d.irms_mA:null);
+ $('scope-rms').textContent=data.raw?'Raw RMS includes DC; the ADC pin AC RMS is shown separately in Calibration.':fullStats?'Full capture AC RMS: '+fmt(fullStats.acRms,precision)+' '+unit+' · AVR RMS: '+fmt(avrRms,precision)+' '+unit+' · visible-window RMS shown below.':'RMS values come from the AVR capture; waveform data may be unavailable.';
+ $('view-wave').disabled=channel==='e';$('window').disabled=data.trend;$('overlay').disabled=data.trend||channel==='p'||data.raw;$('view-wave').setAttribute('aria-pressed',String(!data.trend));$('view-history').setAttribute('aria-pressed',String(data.trend));
  const left=58,right=overlay?57:20,top=25,bottom=33,pw=Math.max(1,w-left-right),ph=h-top-bottom;
  ctx.font='11px "Segoe UI",sans-serif';ctx.fillStyle='#93a9c0';ctx.strokeStyle='#253447';ctx.lineWidth=1;
  function gridLine(x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
  plot=null;
- if(!s||values.length<2){ctx.strokeRect(left,top,pw,ph);ctx.textAlign='center';ctx.fillText(data.trend?'History appears after two fresh readings.':'No waveform received yet.',left+pw/2,top+ph/2);$('capture-note').textContent=data.trend?'History uses distinct measurement packets.':'Waveforms need the updated AVR firmware; summary readings still work.';$('cursor').textContent='';for(let k=1;k<=4;k++)$('stat-'+k).textContent='—';return;}
+ if(!s||values.length<2){ctx.strokeRect(left,top,pw,ph);ctx.textAlign='center';ctx.fillText(data.trend?'History appears after two fresh readings.':'No waveform received yet.',left+pw/2,top+ph/2);$('capture-note').textContent=data.trend?'History uses distinct measurement packets.':data.raw?'Raw ADC samples need the updated AVR and ESP32 firmware.':'Waveforms need the updated AVR firmware; summary readings still work.';$('cursor').textContent='';for(let k=1;k<=4;k++)$('stat-'+k).textContent='—';return;}
  let lo,hi;
- if(data.trend){const pad=Math.max((s.max-s.min)*.15,channel==='i'?1:channel==='e'?.0005:.005);lo=s.min-pad;hi=s.max+pad;}
+ if(data.raw){lo=0;hi=1023;}
+ else if(data.trend){const pad=Math.max((s.max-s.min)*.15,channel==='i'?1:channel==='e'?.0005:.005);lo=s.min-pad;hi=s.max+pad;}
  else{const magnitude=overlay?Math.max(...data.d.v_mV.slice(0,values.length).map(v=>Math.abs(v/1000))):Math.max(Math.abs(s.min),Math.abs(s.max));hi=Math.max(magnitude*1.18,channel==='i'?1:channel==='p'?.01:.1);lo=-hi;}
- const start=times[0],span=Math.max(times[times.length-1]-start,.001),x=k=>left+(times[k]-start)/span*pw,y=v=>top+(hi-v)/(hi-lo)*ph;
- ctx.textAlign='right';for(let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4,py=y(v);gridLine(left,py,left+pw,py);ctx.fillText(fmt(v,channel==='i'&&!overlay?0:channel==='e'?3:2),left-9,py+4);}
- ctx.textAlign='left';ctx.fillText(overlay?'V':units[channel],left-40,top-10);
+ const start=times[0],span=Math.max(times[times.length-1]-start,.001),x=k=>left+(data.trend?times[k]-start:k*data.d.dt_us/1000)/span*pw,y=v=>top+(hi-v)/(hi-lo)*ph;
+ ctx.textAlign='right';for(let k=0;k<=4;k++){const v=lo+(hi-lo)*k/4,py=y(v);gridLine(left,py,left+pw,py);ctx.fillText(fmt(v,data.raw?0:channel==='i'&&!overlay?0:channel==='e'?3:2),left-9,py+4);}
+ ctx.textAlign='left';ctx.fillText(overlay?'V':unit,left-40,top-10);
  ctx.textAlign='center';for(let k=0;k<=4;k++){const px=left+k/4*pw;gridLine(px,top,px,top+ph);const label=data.trend?Math.max(0,((frozen?frozen.at:Date.now())-(start+span*k/4))/1000).toFixed(0)+'s ago':(span*k/4+start).toFixed(1)+' ms';ctx.fillText(label,px,top+ph+21);}
+ function trace(samples,color,yMap=y){
+  const mode=data.raw?'raw':data.trend?'straight':$('trace-style').value;
+  let points=samples.map((v,k)=>[k,v]);
+  if(mode==='smooth')points=Joule.curve(samples);
+  if(mode==='raw')points=samples.flatMap((v,k)=>k?[[k,samples[k-1]],[k,v]]:[[k,v]]);
+  if(mode!=='points')path(ctx,points.map(([k,v])=>[x(k),yMap(v)]),color,2.1);
+  if(!data.trend&&($('show-points').checked||mode==='points')){ctx.fillStyle=color;for(let k=0;k<samples.length;k++){ctx.beginPath();ctx.arc(x(k),yMap(samples[k]),2,0,Math.PI*2);ctx.fill();}}
+ }
  ctx.save();ctx.beginPath();ctx.rect(left,top,pw,ph);ctx.clip();
+ if(!data.trend&&!data.raw&&!overlay&&channel!=='p'&&$('rms-guide').checked&&fullStats){ctx.strokeStyle='#8395aa';ctx.setLineDash([5,5]);for(const value of [-fullStats.acRms,fullStats.acRms])gridLine(left,y(value),left+pw,y(value));ctx.setLineDash([]);}
  const stale=!frozen&&(networkError||(data.trend?ageOf():ageOf('wave_age_ms',data.d))>STALE);ctx.globalAlpha=stale?.4:1;
- if(overlay){const v=data.d.v_mV.slice(0,values.length).map(v=>v/1000),i=data.d.i_mA.slice(0,values.length),fullI=Math.max(...i.map(Math.abs),1)*1.18;path(ctx,v.map((v,k)=>[x(k),y(v)]),colors.v);path(ctx,i.map((v,k)=>[x(k),top+ph/2-v/fullI*ph/2]),colors.i);
+ if(overlay){const v=data.d.v_mV.slice(0,values.length).map(v=>v/1000),i=data.d.i_mA.slice(0,values.length),fullI=Math.max(...i.map(Math.abs),1)*1.18;trace(v,colors.v);trace(i,colors.i,v=>top+ph/2-v/fullI*ph/2);
  ctx.restore();ctx.textAlign='left';ctx.fillStyle=colors.i;for(let k=0;k<=4;k++){const v=-fullI+2*fullI*k/4;ctx.fillText(fmt(v,0),left+pw+8,top+ph-k/4*ph+4);}ctx.fillText('mA',left+pw+8,top-10);ctx.save();ctx.beginPath();ctx.rect(left,top,pw,ph);ctx.clip();
- }else path(ctx,values.map((v,k)=>[x(k),y(v)]),colors[channel],2.1);
+ }else trace(values,colors[channel]);
  ctx.restore();ctx.globalAlpha=1;
  if(cursor>=0){cursor=Math.min(cursor,values.length-1);const px=x(cursor);ctx.strokeStyle='#9db2c9';ctx.setLineDash([3,4]);gridLine(px,top,px,top+ph);ctx.setLineDash([]);ctx.fillStyle=colors[channel];ctx.beginPath();ctx.arc(px,y(overlay?data.d.v_mV[cursor]/1000:values[cursor]),3.5,0,Math.PI*2);ctx.fill();
- $('cursor').textContent=(data.trend?new Date(times[cursor]).toLocaleTimeString():fmt(times[cursor],3)+' ms')+' · '+(overlay?fmt(data.d.v_mV[cursor]/1000)+' V / '+fmt(data.d.i_mA[cursor],0)+' mA':fmt(values[cursor],channel==='e'?3:channel==='i'?0:2)+' '+units[channel]);
+ $('cursor').textContent=(data.trend?new Date(times[cursor]).toLocaleTimeString():fmt(times[cursor],3)+' ms')+' · '+(overlay?fmt(data.d.v_mV[cursor]/1000)+' V / '+fmt(data.d.i_mA[cursor],0)+' mA':fmt(values[cursor],precision)+' '+unit);
  }else $('cursor').textContent='Move over the chart · arrow keys to inspect';
  plot={left,pw,n:values.length};
- const labels=data.trend?['Minimum','Maximum','Average','Visible span']:['Minimum','Maximum',channel==='p'?'Mean power':'RMS','Visible span'];
+ const labels=data.trend?['Minimum','Maximum','Average','Visible span']:['Minimum','Maximum',channel==='p'?'Mean power':data.raw?'RMS (includes DC)':'Window RMS','Visible span'];
  labels.forEach((v,k)=>$('stat-label-'+(k+1)).textContent=v);
- $('stat-1').textContent=fmt(s.min,channel==='e'?3:channel==='i'?0:2)+' '+units[channel];$('stat-2').textContent=fmt(s.max,channel==='e'?3:channel==='i'?0:2)+' '+units[channel];$('stat-3').textContent=fmt(data.trend||channel==='p'?s.mean:s.rms,channel==='e'?3:channel==='i'?0:2)+' '+units[channel];$('stat-4').textContent=fmt(data.trend?span/1000:span,1)+(data.trend?' s':' ms');
+ $('stat-1').textContent=fmt(s.min,precision)+' '+unit;$('stat-2').textContent=fmt(s.max,precision)+' '+unit;$('stat-3').textContent=fmt(data.trend||channel==='p'?s.mean:s.rms,precision)+' '+unit;$('stat-4').textContent=fmt(data.trend?span/1000:span,1)+(data.trend?' s':' ms');
  let note=data.trend?values.length+' readings · session history':values.length+' samples · '+data.d.dt_us+' µs / sample';
+ if(data.raw)note+=' · raw 10-bit ADC · DC offset retained';
+ if(!data.trend&&!data.raw&&$('trace-style').value==='smooth')note+=' · interpolated line, original statistics';
+ if(!data.trend&&!data.raw)note+=' · statistics use visible samples';
  if(channel==='p'&&!data.trend)note+=' · derived V × I';
  if(!data.trend&&!frozen&&(networkError||ageOf('wave_age_ms',data.d)>STALE))note+=' · stale capture';
  if(frozen)note='Paused scope · '+note;
@@ -239,6 +328,8 @@ function draw(){
 }
 for(const b of document.querySelectorAll('[data-channel]'))b.addEventListener('click',()=>{channel=b.dataset.channel;cursor=-1;for(const q of document.querySelectorAll('[data-channel]'))q.setAttribute('aria-pressed',String(q===b));draw();});
 $('view-wave').addEventListener('click',()=>{view='wave';cursor=-1;draw();});$('view-history').addEventListener('click',()=>{view='history';cursor=-1;draw();});
+for(const id of ['trace-style','show-points','rms-guide'])$(id).addEventListener('change',()=>draw());
+$('signal-scale').addEventListener('change',()=>{if($('signal-scale').value==='raw'){if($('trace-style').value!=='steps')preferredTrace=$('trace-style').value;$('trace-style').value='steps';}else $('trace-style').value=preferredTrace;cursor=-1;draw();});
 $('window').addEventListener('change',()=>{cursor=-1;draw();});$('overlay').addEventListener('change',()=>draw());
 $('pause').addEventListener('click',()=>{frozen=frozen?null:{data:latest?JSON.parse(JSON.stringify(latest)):null,history:history.map(r=>({...r})),at:Date.now()};$('pause').textContent=frozen?'Resume scope':'Pause scope';$('pause').setAttribute('aria-pressed',String(!!frozen));draw();});
 canvas.addEventListener('pointermove',e=>{if(!plot)return;const r=canvas.getBoundingClientRect();cursor=Math.max(0,Math.min(plot.n-1,Math.round((e.clientX-r.left-plot.left)/plot.pw*(plot.n-1))));draw();});

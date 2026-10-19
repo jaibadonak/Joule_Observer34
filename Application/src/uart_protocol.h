@@ -4,6 +4,14 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+
+// Signed fractional-mean scaling for $Y; int64_t also covers maximum gain.
+static inline long scaleRawSample(long raw, long mean_x100, long gain, long divisor) {
+    int64_t value = ((int64_t)raw * 100 - mean_x100) * gain;
+    long denominator = 100 * divisor;
+    return (long)((value + (value < 0 ? -denominator/2 : denominator/2)) / denominator);
+}
 
 // Validate every field, including optional fields beyond the output capacity.
 // Return the total field count, or -1. Never write beyond out[maxCount - 1].
@@ -31,12 +39,34 @@ static inline int parseDisplayMode(const char *line) {
 }
 
 static inline int validCalibration(const long *c, int count) {
-    if (count != 11 || c[0] < 1000 || c[0] > 5500 || c[1] < 1 || c[1] > 60000 ||
+    if ((count != 11 && count != 13) || c[0] < 1000 || c[0] > 5500 || c[1] < 1 || c[1] > 60000 ||
         c[2] < 1 || c[2] > 60000) return 0;
     for (int k = 3; k <= 7; k += 4) {
         if (c[k] < 0 || c[k + 1] > 1023 || c[k] > c[k + 1] ||
             c[k + 2] < c[k] * 100 || c[k + 2] > c[k + 1] * 100 ||
             c[k + 3] < 0 || c[k + 3] > 10230) return 0;
+    }
+    if (count == 13 && (c[11] < 0 || c[11] > 51150 || c[12] < 0 || c[12] > 51150)) return 0;
+    return 1;
+}
+
+static inline int validRawCapture(const long *n, int count, int maxPairs) {
+    if (count < 9 || count > 5 + 2 * maxPairs || (count - 5) % 2 ||
+        n[0] < 1 || n[0] > 1000000 || n[1] < 0 || n[1] > 102300 ||
+        n[2] < 0 || n[2] > 102300 || n[3] < 1 || n[3] > 60000 ||
+        n[4] < 1 || n[4] > 60000) return 0;
+    for (int k = 5; k < count; k++) if (n[k] < 0 || n[k] > 1023) return 0;
+    return 1;
+}
+
+// Call only after readNumbers with capacity 1 + stride * maxPairs.
+static inline int validWaveform(const long *n, int count, int raw, int maxPairs) {
+    const int stride = raw ? 4 : 2;
+    if (count < 1 + 2 * stride || count > 1 + stride * maxPairs ||
+        (count - 1) % stride != 0 || n[0] <= 0 || n[0] > 1000000L) return 0;
+    if (raw) for (int k = 0; k < (count - 1) / stride; k++) {
+        if (n[3 + stride * k] < 0 || n[3 + stride * k] > 1023 ||
+            n[4 + stride * k] < 0 || n[4 + stride * k] > 1023) return 0;
     }
     return 1;
 }

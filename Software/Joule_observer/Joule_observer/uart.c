@@ -21,6 +21,7 @@
 
 void uart_init(void)
 {
+    UCSR0A = 0; // normal-speed asynchronous USART; do not inherit U2X from a bootloader
     // Set the upper 8 bits of the baud-rate register.
     UBRR0H = (uint8_t)(UBRR_VALUE >> 8);
 
@@ -115,7 +116,8 @@ void uart_int32(int32_t value)
 void uart_send_measurements(int32_t vrms_mV,
                             int32_t irms_mA,
                             int32_t power_mW,
-                            uint32_t total_mWh)
+                            uint32_t total_mWh,
+                            uint32_t peak_mA)
 {
     // Start the message with "$M," to identify it as measurement data.
     uart_string("$M,");
@@ -136,6 +138,8 @@ void uart_send_measurements(int32_t vrms_mV,
     uart_int32(power_mW);
     uart_transmit(',');
     uart_int32((int32_t)total_mWh);
+    uart_transmit(',');
+    uart_int32((int32_t)peak_mA);
 
     // End the message with carriage return and newline.
     // This lets the receiver recognise the end of the message.
@@ -143,14 +147,14 @@ void uart_send_measurements(int32_t vrms_mV,
 }
 
 void uart_send_waveform(void) {
-    uint16_t offset_v = adc_offset(v_samples);
-    uint16_t offset_i = adc_offset(i_samples);
-    uart_string("$W,104");
-    for (uint8_t k = 0; k < 32; k++) {
-        int32_t v = ((int32_t)v_samples[k] - offset_v) * V_MV_PER_COUNT_X100 / 100L;
-        int32_t i = ((int32_t)i_samples[k] - offset_i) * I_MA_PER_COUNT_X1000 / 1000L;
-        uart_transmit(','); uart_int32(v);
-        uart_transmit(','); uart_int32(i);
+    // Same cycle-based DC correction as scalar power. Raw ADC samples stay untouched.
+    uart_string("$Y,104,"); uart_int32(adc_cycle_offset_x100(v_samples));
+    uart_transmit(','); uart_int32(adc_cycle_offset_x100(i_samples));
+    uart_transmit(','); uart_int32(V_MV_PER_COUNT_X100);
+    uart_transmit(','); uart_int32(I_MA_PER_COUNT_X1000);
+    for (uint16_t k = 0; k < samples; k++) {
+        uart_transmit(','); uart_int32(v_samples[k]);
+        uart_transmit(','); uart_int32(i_samples[k]);
     }
     uart_string("\r\n");
 }
@@ -176,6 +180,8 @@ void uart_send_calibration(void) {
     uart_transmit(','); uart_int32(I_MA_PER_COUNT_X1000);
     uart_calibration_channel(v_samples);
     uart_calibration_channel(i_samples);
+    uart_transmit(','); uart_int32(adc_rms_counts_x100(v_samples));
+    uart_transmit(','); uart_int32(adc_rms_counts_x100(i_samples));
     uart_string("\r\n");
 }
 

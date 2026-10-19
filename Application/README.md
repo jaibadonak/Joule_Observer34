@@ -7,11 +7,13 @@ The page is offline-capable: no external fonts, scripts, chart libraries or CDN.
 
 - RMS voltage/current, real power, and AVR energy total.
 - History for every reading, session min/max, apparent power and power factor.
-- Actual voltage/current captures, V/I overlay, derived instantaneous power,
+- Actual voltage/current captures, raw ADC count view (DC bias retained),
+  V/I overlay, derived instantaneous power,
   time-window controls, pause, keyboard/sample inspection and CSV history export.
 - Separate measurement and waveform freshness, UART error counters, display mode.
 - Display mode is metadata only; there are no ESP32 indicator GPIO outputs.
-  The AVR uses its right-most digit for U/A/P/E and shows V/A/W/Wh locally.
+  The AVR scrolls Vrms / mA peak / W every one second, labelled U/A/P.
+  Energy remains on the website and UART; RMS current is retained alongside peak.
 - Calibration mode with raw ADC min/max/DC/AC RMS/peak-to-peak, capture hold,
   reference inputs and a downloadable AVR calibration.h file.
 - Clear waiting, disconnected, stale, demo and mock states. Missing values are
@@ -56,29 +58,12 @@ are unavailable until the AVR is updated.
 
 ## Calibration
 
-1. Flash both updated firmwares. Connect to JouleObserver and open Calibration.
-2. Use a stable load. Measure AVCC/AREF and enter the actual voltage.
-3. Compare the table's ADC input DC offset, AC RMS and peak-to-peak with a scope
-   at PC0/pin 23 (voltage) and PC1/pin 24 (current), relative to ground.
-4. Hold ADC capture to keep the comparison values still. Other measurements
-   continue updating.
-5. Enter independently measured LOAD RMS voltage/current, before conditioning,
-   to calculate each gain. Blank fields preserve the existing channel's gain.
-   A flat current input cannot be calibrated; fix that signal first.
-6. Download calibration.h, replace the same file in
-   Software/Joule_observer/Joule_observer/, rebuild and flash the AVR.
+See [the calibration guide](docs/calibration.md) for setup, voltage-only
+calibration, averaged captures, multiple reference points and accuracy limits.
+The page also includes the steps beside its fields. Calibrate voltage/current
+independently using measured AC RMS, with R/L held steady for each capture.
+Normal readings support changing loads without entering resistance/inductance.
 
-The AVR remains an ATmega328PB at 2 MHz. There is no remote calibration write or
-AVR bootloader in the current firmware. These settings are compile-time constants
-in one file. Power and waveform scaling follow the new gains automatically.
-Changing the measured reference field alone updates the ADC-to-scope comparison;
-load gain requires a known load RMS reference. Gain correction cannot remove
-filter/trigger phase errors. Use RMS directly for distorted signals, rather
-than assuming a sine from peak-to-peak measurements.
-
-History is kept only in the current browser tab (up to 300 distinct measurements).
-Clear session history does not reset the AVR's energy total. Resetting the AVR
-resets its energy; the page starts a new session when it detects that reset.
 
 ## Reference
 
@@ -87,3 +72,12 @@ the emphasis on actual cycle-aligned waveforms, RMS rather than peak-only
 estimates, CSV logging and gzip delivery. Our ADC uses an interrupt-driven
 capture and a preemptible display scan; its timing is checked separately.
 See docs/spec.md for exact packet formats and limitations.
+
+## Raw ADC waveform
+
+Select Voltage or Current, choose Waveform, then select Raw ADC counts.
+This shows the original 0–1023 samples, not a reconstructed signal. Both AVR
+and ESP32 must be updated for the full $Y raw-capture packet. Calibrated
+Window RMS covers visible samples; overview RMS covers the full AVR block.
+
+Specification verification: see [the audit](docs/specification-audit.md).

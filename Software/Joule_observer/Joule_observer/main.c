@@ -1,6 +1,6 @@
 /*
  * 2 MHz ATmega328PB: V/I capture -> calculations -> display + UART.
- * Build with -DDISPLAY_SELF_TEST for fixed 13.7U, 0.40A, 5.48P, 0.12E.
+ * Build with -DDISPLAY_SELF_TEST for fixed 13.7U, 566A (mA peak), 5.48P.
  * In that build no analogue inputs or zero crossings are needed.
  */
 #include <avr/io.h>
@@ -50,14 +50,14 @@ int main(void) {
     uint32_t display_ticks = DISPLAY_UPDATE_TICKS;
     uint32_t uart_ticks = UART_PERIOD_TICKS;
     uint32_t mode_ticks = 0;
-    uint16_t last_ticks;
+    uint32_t last_ticks;
     uint8_t last_mode = 255;
 #ifndef DISPLAY_SELF_TEST
-    uint16_t capture_started;
+    uint32_t capture_started;
     uint8_t raw_due = 1;
     uint32_t current_mA_x100 = 0;
 #endif
-    uint32_t vrms_mV = 0, current_mA = 0, power_mW = 0;
+    uint32_t vrms_mV = 0, current_mA = 0, peak_mA = 0, power_mW = 0;
 
     display_init();
     uart_init();
@@ -73,14 +73,14 @@ int main(void) {
 #else
     uart_string("BOOT JouleObserver DISPLAY_SELF_TEST: fixed readings\r\n");
 #endif
-    last_ticks = TCNT1;
+    last_ticks = calcs_ticks();
 #ifndef DISPLAY_SELF_TEST
     capture_started = last_ticks;
 #endif
 
     while (1) {
-        uint16_t now = TCNT1;
-        uint16_t dt = (uint16_t)(now - last_ticks);
+        uint32_t now = calcs_ticks();
+        uint32_t dt = (uint32_t)(now - last_ticks);
         last_ticks = now;
         // Poll continuously, including time spent sending UART. Timer1 wraps safely.
         energy_add(power_mW, dt);
@@ -99,13 +99,17 @@ int main(void) {
 #ifdef DISPLAY_SELF_TEST
         vrms_mV = 13700;
         current_mA = 400;
+        peak_mA = 566;
         power_mW = 5480;
 #else
         if (adc_capture_done()) {
             vrms_mV = calc_voltage_rms_mV();
             current_mA_x100 = calc_current_rms_mA_x100();
             current_mA = (current_mA_x100 + 50) / 100;
+            peak_mA = calc_current_peak_mA();
             power_mW = calc_power_mW();
+            // Publish fresh values before the long raw-waveform UART transfer.
+            display_update(vrms_mV, peak_mA, power_mW, energy_mWh());
             if (raw_due) {
                 // Read only while the buffers are frozen.
                 send_raw_stats("V", v_samples);
@@ -118,30 +122,30 @@ int main(void) {
                 raw_due = 0;
             }
             adc_start_capture();
-            capture_started = TCNT1;
-        } else if ((uint16_t)(TCNT1 - capture_started) >= NO_SIGNAL_TICKS) {
+            capture_started = calcs_ticks();
+        } else if ((uint32_t)(calcs_ticks() - capture_started) >= NO_SIGNAL_TICKS) {
             adc_status_t status;
             adc_get_status(&status);
-            vrms_mV = current_mA = power_mW = 0;
+            vrms_mV = current_mA = peak_mA = power_mW = 0;
             adc_start_capture();  // atomically abort partial captures before rearming
-            capture_started = TCNT1;
+            capture_started = calcs_ticks();
             send_timeout_status(&status);
         }
 #endif
         if (display_ticks >= DISPLAY_UPDATE_TICKS) {
             display_ticks %= DISPLAY_UPDATE_TICKS;
 #ifdef DISPLAY_SELF_TEST
-            display_update(vrms_mV, current_mA, power_mW, 123);
+            display_update(vrms_mV, peak_mA, power_mW, 123);
 #else
-            display_update(vrms_mV, current_mA, power_mW, energy_mWh());
+            display_update(vrms_mV, peak_mA, power_mW, energy_mWh());
 #endif
         }
         if (uart_ticks >= UART_PERIOD_TICKS) {
             uart_ticks %= UART_PERIOD_TICKS;
 #ifdef DISPLAY_SELF_TEST
-            uart_send_measurements(vrms_mV, current_mA, power_mW, 123);
+            uart_send_measurements(vrms_mV, current_mA, power_mW, 123, peak_mA);
 #else
-            uart_send_measurements(vrms_mV, current_mA, power_mW, energy_mWh());
+            uart_send_measurements(vrms_mV, current_mA, power_mW, energy_mWh(), peak_mA);
 #endif
 #ifndef DISPLAY_SELF_TEST
             raw_due = 1;

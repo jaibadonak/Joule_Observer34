@@ -14,7 +14,7 @@
 // Segment patterns for 0-9: bit0 = a ... bit6 = g (bit7 = dp is added separately)
 static const uint8_t seg_pattern[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66,
 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
-// U (voltage), A (amps), P (watts), E (Wh). Seven segments cannot draw V/W cleanly.
+// U (Vrms), A (mA peak), P (watts), E (Wh buffer, not scrolled). Seven segments cannot draw V/W cleanly.
 static const uint8_t quantity_pattern[DISPLAY_QUANTITIES] = {0x3E, 0x77, 0x73, 0x79};
 
 // Digit enable pin masks in scan order. Index 0 is the least significant (right-most) digit.
@@ -149,7 +149,7 @@ static uint32_t divide_round(uint32_t n, uint32_t d) {
 	return (n + d / 2) / d;
 }
 
-// All inputs use milli-units; display V, A, W and Wh with up to two decimals.
+// Format voltage, power and energy milli-units as V, W and Wh; current uses integer mA peak.
 // Drop a decimal when the rounded number would exceed the three numeric digits.
 static void display_milli(uint8_t quantity, int32_t milli) {
     uint32_t value = non_negative(milli);
@@ -162,9 +162,9 @@ static void display_milli(uint8_t quantity, int32_t milli) {
     display_set_number(quantity, divide_round(value, divisor), decimals);
 }
 
-void display_update(int32_t vrms_mV, int32_t irms_mA, int32_t power_mW, int32_t energy_mWh) {
+void display_update(int32_t vrms_mV, int32_t ipeak_mA, int32_t power_mW, int32_t energy_mWh) {
     display_milli(DISPLAY_VOLTAGE, vrms_mV);
-    display_milli(DISPLAY_CURRENT, irms_mA);
+    display_set_number(DISPLAY_CURRENT, non_negative(ipeak_mA), 0); // integer mA peak
     display_milli(DISPLAY_POWER, power_mW);
     display_milli(DISPLAY_ENERGY, energy_mWh);
 }
@@ -187,7 +187,7 @@ ISR(TIMER0_COMPA_vect) {
 	if (position == 0) {
 		if (disp_frames >= DISPLAY_SCROLL_FRAMES) {
 			disp_frames = 0;
-			disp_quantity = (disp_quantity + 1) % DISPLAY_QUANTITIES;
+			disp_quantity = (disp_quantity + 1) % DISPLAY_SCROLL_QUANTITIES;
 		}
 		for (uint8_t i = 0; i < DISPLAY_DIGITS; i++) {
 			disp_frame[i] = disp_characters[disp_quantity][i];
@@ -210,6 +210,7 @@ ISR(TIMER0_COMPA_vect) {
 		disp_frames++;
 	}
 	disp_position = position;
+    OCR0A = (uint8_t)(TIMER0_OCR + (position < TIMER0_EXTRA_COUNTS ? 1UL : 0UL));
 	cli();
 	TIMSK0 |= (1<<OCIE0A);
 }

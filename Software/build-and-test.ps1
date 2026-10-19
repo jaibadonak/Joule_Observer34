@@ -40,6 +40,7 @@ restore tests/Debug/data.bin binary 0x800100
 break test_finished
 continue
 printf "Regression failures: %u\n", test_failures
+printf "Specification grid: %u cases; max errors: V=%lu mV, Ipeak=%lu hundredths mA, P=%lu mW\n", spec_cases, spec_voltage_error_mV, spec_peak_error_mA_x100, spec_power_error_mW
 if test_failures != 0
   quit 1
 end

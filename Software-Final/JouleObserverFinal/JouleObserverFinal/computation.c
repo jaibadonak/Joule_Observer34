@@ -82,9 +82,11 @@ static uint8_t find_complete_cycles(volatile uint16_t *block, cycle_window_t *wi
     return 1; //pass
 }
 
+static uint32_t square_root_64(uint64_t value);
+
 uint32_t adc_cycle_offset_x100(volatile uint16_t *block) {
     cycle_window_t window;
-
+	uint32_t total = 0;  
 	//if fail
     if (!find_complete_cycles(block, &window)) {
         uint32_t total = 0;

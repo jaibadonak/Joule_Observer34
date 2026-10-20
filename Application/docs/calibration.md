@@ -81,13 +81,13 @@ also limited by telemetry/capture cadence.
   extra extrema. It affects drawing only; statistics and cursor remain original.
 - Raw ADC counts: original 0-1023 codes, including DC bias, drawn as ADC steps.
 - Sample markers, time windows, pause and keyboard/sample inspection are available.
-- RMS guides use AC RMS from the entire waveform capture. Window RMS uses only
-  visible samples. Raw RMS includes DC, while the calibration table's AC RMS
+- RMS guides and capture statistics come from the AVR for the full capture,
+  independent of zoom. Raw RMS includes DC, while the calibration table's AC RMS
   excludes it. The overview's AVR RMS can refer to a newer/older capture than
   the waveform while UART packets arrive.
 
-Full raw captures use roughly 1.7-2.1 seconds of a 9600-baud UART transfer,
-plus diagnostics. Updates are therefore slower than a streaming oscilloscope.
+Calculated captures take several seconds over the 9600-baud UART, plus
+diagnostics. Collecting eight distinct captures can take around a minute. Updates are therefore slower than a streaming oscilloscope.
 The ADC buffers stay frozen while sending. Timer1 is extended to 32 bits so
 long transfers cannot lose energy time at the old 2.1-second hardware wrap.
 
@@ -110,5 +110,6 @@ rising crossings over whole cycles, interpolating their fractional sample
 positions. This avoids confusing the remaining partial cycle with sensor bias.
 It does not force equal peaks or replace samples with a fitted sine. Weak, short
 or non-periodic captures fall back to their block mean. Raw ADC samples and
-the RMS calibration algorithm are unchanged. The Y packet remains compatible
-with the existing ESP32 receiver.
+the RMS calibration algorithm are unchanged. Both controllers need updating for the calculated $B/$S/$G/$E format.
+Interactive reference averaging and gain fitting still run in the browser;
+live electrical values and waveform statistics run on the AVR.

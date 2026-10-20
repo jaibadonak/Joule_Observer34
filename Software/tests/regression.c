@@ -42,6 +42,16 @@ int main(void) {
     CHECK(calc_power_factor_x1000(2800,5600) == 500);
     CHECK(calc_power_factor_x1000(0,0) == -1);
     CHECK(calc_power_factor_x1000(5601,5600) == -1);
+    v_samples[0]=522; i_samples[0]=250;
+    waveform_sample_t point;
+    calc_waveform_sample(0,42200,30000,&point);
+    CHECK(point.voltage_mV==(int32_t)V_MV_PER_COUNT_X100);
+    CHECK(point.current_mA<0 && point.power_mW<0);
+    float expected_point_power=-5000.0f*(V_MV_PER_COUNT_X100/100.0f)
+                               *(I_MA_PER_COUNT_X1000/1000.0f)/1000.0f;
+    CHECK(fabsf(point.power_mW-expected_point_power)<1.0f);
+    for (uint16_t k=0;k<samples;k++) v_samples[k]=422;
+    CHECK(calc_frequency_mHz()==0);
     capture_stats_t stats_check = {0};
     capture_stats_add(&stats_check,-3000); capture_stats_add(&stats_check,4000);
     CHECK(stats_check.minimum == -3000 && stats_check.maximum == 4000);
@@ -129,10 +139,6 @@ int main(void) {
     CHECK(scale_adc_sample(422, 42200, 10926, 100) == 0);
     CHECK(scale_adc_sample(0, 102300, 60000, 100) == -613800L);
     CHECK(scale_adc_sample(422, 42250, 10926, 100) == -55); // fractional bias retained
-    long raw_capture[9] = {104, 42200, 36000, 10926, 3877, 245, 360, 599, 360};
-    CHECK(validRawCapture(raw_capture, 9, 200));
-    CHECK(!validRawCapture(raw_capture, 407, 200));
-    raw_capture[8] = 1024; CHECK(!validRawCapture(raw_capture, 9, 200));
     long extended_wave[9] = {104, -19339, -566, 245, 276, 19339, 566, 599, 568};
     CHECK(validWaveform(extended_wave, 9, 1, 2));
     CHECK(!validWaveform(extended_wave, 13, 1, 2)); // reject overflow before reading

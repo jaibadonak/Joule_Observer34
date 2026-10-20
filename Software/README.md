@@ -6,9 +6,10 @@ based on the newer former `Testing/Project_testing` implementation, using a
 separate measured DC offset for each channel and RMS current. The old duplicate
 and the placeholder UART project have been removed.
 
-Normal firmware now also sends the AVR energy total in $M, a full 200-pair $Y
-raw waveform capture, and full-block $C calibration statistics once per telemetry
-interval. Flash the updated ESP32 firmware for the new dashboard. Calibration
+Normal firmware sends voltage, current, power, energy, peak current, apparent
+power, power factor and frequency in $M. It calculates the full 200-pair waveform,
+instantaneous power and capture statistics, sent in $B/$S/$G/$E frames, plus
+full-block $C calibration statistics per telemetry interval. Flash the updated ESP32 firmware for the new dashboard. Calibration
 constants are in Joule_observer/Joule_observer/calibration.h; use the dashboard's
 Calibration panel to compare ADC pin measurements and download a replacement.
 Rebuild and flash the AVR to apply it. The display test is still independent

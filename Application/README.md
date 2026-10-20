@@ -8,7 +8,7 @@ The page is offline-capable: no external fonts, scripts, chart libraries or CDN.
 - RMS voltage/current, real power, and AVR energy total.
 - History for every reading, session min/max, apparent power and power factor.
 - Actual voltage/current captures, raw ADC count view (DC bias retained),
-  V/I overlay, derived instantaneous power,
+  V/I overlay, AVR-calculated instantaneous power,
   time-window controls, pause, keyboard/sample inspection and CSV history export.
 - Separate measurement and waveform freshness, UART error counters, display mode.
 - Display mode is metadata only; there are no ESP32 indicator GPIO outputs.
@@ -77,7 +77,9 @@ See docs/spec.md for exact packet formats and limitations.
 
 Select Voltage or Current, choose Waveform, then select Raw ADC counts.
 This shows the original 0–1023 samples, not a reconstructed signal. Both AVR
-and ESP32 must be updated for the full $Y raw-capture packet. Calibrated
-Window RMS covers visible samples; overview RMS covers the full AVR block.
+and ESP32 must be updated together for the calculated capture protocol.
+Capture statistics cover the full capture, independent of zoom. Apparent power,
+power factor and frequency are also calculated on the AVR. Full captures take
+several seconds at 9600 baud.
 
 Specification verification: see [the audit](docs/specification-audit.md).

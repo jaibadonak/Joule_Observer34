@@ -3,7 +3,7 @@
 This audit separates firmware settings/calculation tests from physical bench
 acceptance. No firmware was flashed and no hardware accuracy measurements were
 performed during this audit. Existing calibration values, including measured
-AVCC = 4.963 V, were preserved.
+AVCC = 4.970 V, were preserved.
 
 | Requirement | Implementation / evidence |
 |---|---|
@@ -17,7 +17,7 @@ AVCC = 4.963 V, were preserved.
 | Display Vrms, mA peak, W | U/A/P scroll. Current is maximum absolute sampled current after cycle-based DC removal, not RMS converted by an assumed crest factor. |
 | Scroll 1 s | 50 frames, each 625 timer counts at 2 MHz /64. Test measures 31250 timer counts per mode. Independent of main-loop UART blocking. |
 | UART 9600 baud | USART0 8N1, normal speed explicitly selected, UBRR0=12. Physical baud = 9615.385 (+0.1603%), normal integer-divider tolerance. ESP32 configured for 9600. |
-| UART V/I/P/E | $M,Vrms_mV,Irms_mA,Power_mW,Energy_mWh,Ipeak_mA. Peak is an optional appended fifth field; old three/four-field senders remain supported. |
+| UART V/I/P/E | $M,Vrms_mV,Irms_mA,Power_mW,Energy_mWh,Ipeak_mA,Apparent_mVA,PF_x1000,Frequency_mHz. Legacy three/four/five-field packets remain supported. |
 
 ## Local display
 
@@ -48,11 +48,13 @@ full-scale ranges, substitute those explicitly during bench acceptance.
 | Quantity | 5% full-scale allowance | Largest simulated error |
 |---|---:|---:|
 | Voltage RMS | 0.770 V | 0.091 V |
-| Current peak | 42.09 mA | 2.21 mA |
-| Real power | 0.375 W | 0.116 W |
+| Current peak | 42.09 mA | 1.81 mA |
+| Real power | 0.375 W | 0.113 W |
 
 RMS current is also checked against 5% of 595.24 mA full scale. The required
 local display uses measured peak, and UART includes both current definitions.
+The grid also checks AVR apparent power, power factor and frequency (within
+0.2 Hz). Separate protocol tests reject incomplete and out-of-order frames.
 Energy accumulation tests cover known power/time and multi-second timer wraps.
 No energy full-scale or observation interval was specified, so no separate
 5%-of-full-scale energy accuracy claim is made.

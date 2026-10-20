@@ -14,7 +14,7 @@
 #endif
 
 
-//------------------NOTES--------------\\
+//------------------NOTES----------------
 //
 //UL: unsigned long (32-bit). 
 //N1: if cpu freq is not 2Mhz, fail the compliation(only checks macro)

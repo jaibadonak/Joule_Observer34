@@ -9,7 +9,7 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
-#define F_CPU 2000000UL
+#define F_CPU 2000000UL  // 2Mhz
 
 
 

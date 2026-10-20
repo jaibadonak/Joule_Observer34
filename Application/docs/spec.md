@@ -14,14 +14,13 @@ Lines longer than 2047 bytes are dropped as a whole.
 
 ### Measurements
 
-    $M,<vrms_mV>,<irms_mA>,<power_mW>[,<energy_mWh>[,<ipeak_mA>]]
+    $M,<vrms_mV>,<irms_mA>,<power_mW>,<energy_mWh>,<ipeak_mA>,<apparent_mVA>,<power_factor_x1000>,<frequency_mHz>
 
-RMS voltage/current must be non-negative. Power may be signed. Optional energy
-must be non-negative. Older three-field packets keep working, with energy null.
-An optional fifth field is non-negative sampled peak current in mA. Three-
-and four-field legacy packets remain accepted; absent peak current is null.
-Further numeric fields are validated and ignored. The new AVR sends energy
-from its own accumulator; the browser does not estimate missing energy.
+The AVR calculates all eight fields. Power may be signed; other quantities are
+non-negative. PF is in thousandths (0–1000), or -1 when unavailable. Frequency
+0 means unavailable. The API exposes unavailable derived values as null.
+Legacy three/four/five-field packets remain accepted; partial six/seven-field
+packets are rejected. Further numeric fields are validated and ignored.
 
 ### Local display mode
 
@@ -41,7 +40,7 @@ the website; its display formatting buffer is retained but is not scrolled.
 The scan uses 625 /64 Timer0 counts per frame, 50 frames per second, with
 one extra timer count in one of the four digit slots to remove truncation.
 Current RMS remains the M packet's second field and powers the website's
-RMS history/PF calculation. Peak current is appended as the fifth field.
+RMS history; PF uses the AVR internal current before integer-mA rounding. Peak current is appended as the fifth field.
 UART is GPIO16, as confirmed by the user; the schematic's GPIO3 label was wrong.
 
 ### Waveform
@@ -58,29 +57,34 @@ to exactly the same sample positions. Packets require 2â€“200 complete groups wi
 extra groups are rejected before reading the sample buffer. dt_us
 must be 1â€“1000000. Values are signed 32-bit integers (no silent int16 clipping).
 
-The new AVR sends the complete 200-sample block in a compact raw packet:
+The AVR sends a calculated capture as short indexed lines:
 
-    $Y,<dt_us>,<v_dc_x100>,<i_dc_x100>,<v_gain_x100>,<i_gain_x1000>,<v0_adc>,<i0_adc>,...
+    $B,<dt_us>,<count>
+    $S,<index>,<v_mV>,<i_mA>,<p_mW>,<v_adc>,<i_adc>
+    $G,<channel>,<minimum>,<maximum>,<mean>,<rms>
+    $E
 
-Each DC bias is in hundredths of an ADC count. For stable periodic signals,
-it is integrated across complete cycles with fractional crossing boundaries.
-If fewer than two qualified crossings are present, or the signal is weak/noisy,
-the estimate falls back to the block mean. Field positions and units are
-unchanged from the earlier Y packet. Gains and DC estimates travel with the
-capture, so calibrated and raw traces always use the same capture settings.
-The ESP32 validates all fields and reconstructs signed scaled values. W and X
-remain accepted for older firmware. Up to 200 sample pairs are supported.
+B begins the frame, followed by count S rows indexed from zero, five G rows
+and E. Channels 0–4 are voltage (mV), current (mA), instantaneous power (mW),
+raw voltage and raw current (ADC counts). Statistics cover the entire capture;
+raw RMS includes DC. The AVR calculates all scaled samples, power and statistics.
+The ESP32 only validates, stores and serves them. Frames publish only after all
+samples and statistics arrive in order. Invalid/incomplete frames leave the last
+published capture intact. Mode packets can interleave between sample rows.
+The earlier raw-only Y format is no longer decoded: update both controllers.
+Legacy W/X captures remain supported without power or capture statistics.
 
-Samples are 104 us apart (20.7 ms first-to-last span). V and I are captured in
-separate rising-voltage-triggered cycles; their product assumes a repeating
-load. R/L changes between captures invalidate that assumption. The scalar
-power uses all 200 pairs. Display-test sends summaries without waveforms.
+There are 200 samples per channel, 104 us apart (20.7 ms first-to-last span).
+V and I are captured in separate rising-voltage-triggered cycles. Their product
+assumes a repeating load; R/L changes between captures invalidate that assumption.
+DC bias uses complete cycles with fractional crossing boundaries, falling back
+to block mean for weak or non-periodic signals. Raw codes remain unchanged.
+Display-test sends summaries without waveforms.
 
-A complete Y line is below the 2047-byte line limit even at 1023 ADC counts.
-It occupies approximately 1.7-2.1 seconds at 9600 baud, plus diagnostics.
+Calculated captures take several seconds at 9600 baud, depending on digit count.
 Buffers stay frozen until transmission ends. Timer1 is extended to 32 bits to
-retain elapsed energy time through long transfers. Capture timeouts still
-start at rearm. Updates are not a continuous oscilloscope stream.
+retain energy time through long transfers. Capture timeouts start at rearm.
+The local display still scrolls once per second, independently of UART transfer.
 
 ### Calibration
 
@@ -120,11 +124,14 @@ assets. /api/data returns JSON with no-store caching.
 | uptime_ms | ESP32 uptime; a decrease also resets browser session history |
 | vrms_mV, irms_mA, power_mW | Last valid measurement |
 | ipeak_mA | Sampled absolute AC peak current in mA, or null for legacy packets |
+| apparent_mVA, power_factor_x1000, frequency_mHz | AVR VA, PF and frequency; null when unavailable |
 | energy_mWh | AVR total, or null for old three-field packets |
 | display_mode | 0â€“3, or -1 when stale/unavailable |
-| wave_sequence, wave_age_ms | Valid W/X/Y count and age, or null age before one arrives |
-| dt_us, v_mV, i_mA | Latest waveform; empty arrays until a valid W/X/Y packet |
-| v_adc, i_adc | Original ADC counts from X/Y; empty for legacy W or mock |
+| wave_sequence, wave_age_ms | Complete frame or legacy W/X count and age since reception began, or null age before one arrives |
+| dt_us, v_mV, i_mA | Latest waveform; empty until a complete frame or valid W/X packet |
+| v_adc, i_adc | Original ADC counts; empty for legacy W or mock |
+| p_mW | AVR instantaneous power samples; empty for legacy W/X |
+| capture_stats | Five [min,max,mean,RMS] rows in the G channel units; null for legacy captures |
 | invalid_packets, dropped_lines | Parser and oversized-line counters |
 | calibration | null, or object below |
 
@@ -134,17 +141,18 @@ i_mean_x100, i_rms_x10, and optional v_rms_x100 / i_rms_x100; sequence is the
 count of valid C packets.
 
 The page polls every 500 ms with a 2 s fetch timeout. Measurement and waveform
-freshness are independent (3 s threshold). A failed HTTP response never switches
+freshness are independent (15 s threshold to accommodate UART transfers). A failed HTTP response never switches
 to demo data. Session history is browser-local, bounded to 300 distinct fresh
 measurement packets. Reset markers, falling energy or ESP32 uptime clear it.
-Apparent power = Vrms*Irms. PF is unavailable at zero apparent power or for a
-ratio outside [-1,1]. Frequency is estimated from waveform rising crossings,
-not hard-coded. Energy is a history chart; it has no AC waveform.
+Apparent power, PF and frequency come from the AVR without an ESP32/browser
+fallback. Frequency uses interpolated voltage rising crossings and ADC timing.
+Energy has a history chart, with no AC waveform.
 
-The scope selector offers calibrated signals or raw ADC counts for voltage and
-current. Raw view retains DC bias and uses a 0â€“1023 axis. Its RMS includes DC.
-Calibrated Window RMS uses only the visible samples; overview RMS uses the
-complete 200-sample AVR block. They can differ for a partial-cycle window.
+Raw ADC view preserves DC bias and uses a fixed 0–1023 axis. Capture RMS and
+statistics come from the AVR for the whole capture, independent of zoom.
+Overview RMS also uses the full ADC block, with its own DC-removal method.
+Browser arithmetic remains for drawing, session history and interactive gain
+fitting against user-entered calibration references.
 
 Calibration now averages eight fresh captures, screens selected-channel stability,
 and optionally fits multiple independent reference points. See [calibration guide](calibration.md).

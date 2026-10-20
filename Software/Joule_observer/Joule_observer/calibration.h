@@ -21,7 +21,7 @@
 
 #endif
 
-//------------------NOTES----------------\\
+//------------------NOTES----------------
 //
 //N1: change these values to esstionally change the gain of the read voltage to the acutal input voltage.
 //this allows for a swift and easy calibration when observerin errors. An example on how you would chaneg the numbers are:

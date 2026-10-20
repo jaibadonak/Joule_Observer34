@@ -50,15 +50,6 @@ static inline int validCalibration(const long *c, int count) {
     return 1;
 }
 
-static inline int validRawCapture(const long *n, int count, int maxPairs) {
-    if (count < 9 || count > 5 + 2 * maxPairs || (count - 5) % 2 ||
-        n[0] < 1 || n[0] > 1000000 || n[1] < 0 || n[1] > 102300 ||
-        n[2] < 0 || n[2] > 102300 || n[3] < 1 || n[3] > 60000 ||
-        n[4] < 1 || n[4] > 60000) return 0;
-    for (int k = 5; k < count; k++) if (n[k] < 0 || n[k] > 1023) return 0;
-    return 1;
-}
-
 // Call only after readNumbers with capacity 1 + stride * maxPairs.
 static inline int validWaveform(const long *n, int count, int raw, int maxPairs) {
     const int stride = raw ? 4 : 2;

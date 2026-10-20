@@ -53,7 +53,28 @@ uint32_t calc_power_mW(void);            // real power, mean of v x i, in mW
 void     energy_add(uint32_t power_mW, uint32_t dt_ticks);
 uint32_t energy_mWh(void);
 
+#define ADC_SAMPLE_US 104UL
+uint32_t calc_apparent_power_mVA(uint32_t voltage_mV, uint32_t current_mA_x100);
+int16_t calc_power_factor_x1000(uint32_t power_mW, uint32_t apparent_mVA); // -1 unavailable
+uint32_t calc_frequency_mHz(void); // 0 unavailable
 
+typedef struct {
+	int32_t voltage_mV, current_mA, power_mW;
+} waveform_sample_t;
+
+typedef struct {
+	int32_t minimum, maximum;
+	int64_t sum;
+	uint64_t sum_squares;
+	uint16_t count;
+} capture_stats_t;
+
+int32_t scale_adc_sample(uint16_t raw, uint32_t dc_x100, uint32_t gain, int32_t divisor);
+void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
+waveform_sample_t *value);
+void capture_stats_add(capture_stats_t *stats, int32_t value);
+int32_t capture_stats_mean(const capture_stats_t *stats);
+uint32_t capture_stats_rms(const capture_stats_t *stats);
 
 
 #endif /* COMPUTATION_H_ */

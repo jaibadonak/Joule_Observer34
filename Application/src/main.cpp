@@ -30,7 +30,7 @@ const uint32_t MODE_TIMEOUT_MS = 4000;
 int displayMode = -1;
 uint32_t modeAt = 0;
 
-const int MAX_PAIRS = 200;     // full AVR capture, compact raw format
+const int MAX_PAIRS = WAVEFORM_MAX_SAMPLES;     // full AVR capture, compact raw format
 const size_t MAX_LINE = 2048;  // extended waveform includes original ADC samples
 
 // web/index.html, built in by board_build.embed_files in platformio.ini
@@ -237,7 +237,7 @@ void sendPage() {
 // GET /api/data: the latest readings and waveform as JSON (see docs/spec.md).
 void sendData() {
   String json;
-  json.reserve(900 + 26 * pairs);
+  json.reserve(1600 + 48 * pairs);
 #ifdef MOCK_ATMEGA
   json += "{\"source\":\"mock\",\"age_ms\":";
 #else

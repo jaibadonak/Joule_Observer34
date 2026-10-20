@@ -52,7 +52,7 @@ ISR(ADC_vect) {
 		} else {
 		// write to our relevant array as long as our sample position is less than our samples.
 		if (sample_position < samples) { vOrI_samples[sample_position++] = value; }
-		else if (sample_position >= samples) {
+		if (sample_position >= samples) {
 			ADCSRA = (1<<ADEN) | (1<<ADIE) | (1<<ADPS2);
 			flush = 1;                            // next interrupt is the leftover
 		}
@@ -61,8 +61,8 @@ ISR(ADC_vect) {
 
 void adc_init(void) {
 	// Set input direction and disable pull-ups explicitly, including after a bootloader.
-	DDRC &= ~((1<<PINC0) | (1<<PINC1));
-	PORTC &= ~((1<<PINC0) | (1<<PINC1));
+	DDRC &= ~((1<<PINC0) | (1<<PINC1));						//inputs
+	PORTC &= ~((1<<PINC0) | (1<<PINC1));					//disable any pull ups(if any).
 	DIDR0  = (1<<ADC0D) | (1<<ADC1D);                       // PC0, PC1 analogue only
 	ADMUX  = (1<<REFS0);                                    // AVCC reference, right adjusted, channel 0
 	ADCSRA = (1<<ADPS2);                                    // /16: 125 kHz ADC clock, 104 us per sample (9.6 kHz)
@@ -77,6 +77,7 @@ void adc_init(void) {
 // Call this from main when the ADC is idle (at start up, or after a capture is done).
 void adc_start_capture(void) {
 	// Also safe on timeout: abort any old conversion before resetting its state.
+	//N4
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
 		ADCSRA = 0;
 		channel = V_CH;
@@ -98,7 +99,9 @@ void adc_start_capture(void) {
 uint8_t adc_capture_done(void) {
 	return conversion_complete;
 }
-
+//copies all private ADC state into the struct
+//needed because those variables are static, so main can't read them directly
+//similar idea to private fields and gett functions in java.
 void adc_get_status(adc_status_t *status) {
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
 		status->position = sample_position;
@@ -119,3 +122,22 @@ void adc_get_status(adc_status_t *status) {
 //N2: In free-running mode the next conversion has already started when the ADC interrupt fires, so after the
 //last sample there is one leftover conversion. It is discarded, and it is the one safe moment to change channel.
 //N3: The dummy conversion in adc_init is needed because the first conversion after ADEN takes 25 clocks.
+//
+//N4: TL;DR it turns off interrupts breifly to run the block of code, to avoid any errors and then turns them back on (if they were on).
+//An interrupt ca nfire between any two machine instructions in main. Usually harmless, but not when main and an ISR share variables.
+//example: Example of a torn read. AVR is 8-bit, so reading a 16-bit sample_position takes two instructions (low byte, then high byte).
+//
+//sample_position = 0x00FF (255)
+//
+//main reads low byte   → 0xFF
+//   ADC ISR fires, sample_position++ -> 0x0100 (256)
+//main reads high byte  → 0x01
+//
+//main thinks it's 0x01FF = 511    (was never true)
+//ATOMIC_BLOCK(ATOMIC_RESTORESTATE) fixes this:
+//1) Saves SRG
+//2) cli(), interrupts off
+//3) runs the codd,nothing can interrupt it
+//restores SREG, so interrupts go back to normal.
+
+

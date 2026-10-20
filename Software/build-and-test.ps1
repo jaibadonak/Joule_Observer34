@@ -23,31 +23,38 @@ try {
     }
     & $Python tests/check-isr-budget.py "$Toolchain/avr-objdump.exe" "$project/Debug/Joule_observer.elf"
     if ($LASTEXITCODE) { throw 'ADC interrupt cycle budget failed' }
-    # The instruction simulator supports the 328P instruction set shared by PB.
-    & "$Toolchain/avr-gcc.exe" -mmcu=atmega328p -g -Os -Wall -Wextra -Werror -std=gnu99 tests/regression.c -lm -o tests/Debug/regression.elf
-    if ($LASTEXITCODE) { throw 'Regression compilation failed' }
-    & "$Toolchain/avr-objcopy.exe" -O binary --only-section=.data tests/Debug/regression.elf tests/Debug/data.bin
-    if ($LASTEXITCODE) { throw 'Regression data extraction failed' }
-    # This bundled simulator does not preserve the flash initializer image for
-    # startup's .data copy. Restore the ELF's actual initial data after startup.
-    @'
+    # Separate binaries keep transport fixtures away from the 328P's 2 KB
+    # measurement buffers/float-test stack. Both use production C code.
+    foreach ($testName in @('regression','protocol-regression')) {
+        & "$Toolchain/avr-gcc.exe" -mmcu=atmega328p -g -Os -Wall -Wextra -Werror -std=gnu99 "tests/$testName.c" -lm -o "tests/Debug/$testName.elf"
+        if ($LASTEXITCODE) { throw "$testName compilation failed" }
+        & "$Toolchain/avr-objcopy.exe" -O binary --only-section=.data "tests/Debug/$testName.elf" "tests/Debug/$testName-data.bin"
+        if ($LASTEXITCODE) { throw "$testName data extraction failed" }
+        $gdbCommands = @'
 set confirm off
 target sim
 load
 break main
 run
-restore tests/Debug/data.bin binary 0x800100
+restore tests/Debug/TEST-data.bin binary 0x800100
 break test_finished
 continue
 printf "Regression failures: %u\n", test_failures
-printf "Specification grid: %u cases; max errors: V=%lu mV, Ipeak=%lu hundredths mA, P=%lu mW\n", spec_cases, spec_voltage_error_mV, spec_peak_error_mA_x100, spec_power_error_mW
+SUMMARY
 if test_failures != 0
+  print failure_lines
   quit 1
 end
 quit 0
-'@ | Set-Content -LiteralPath tests/Debug/check.gdb
-    & "$Toolchain/avr-gdb.exe" -q -batch tests/Debug/regression.elf -x tests/Debug/check.gdb
-    if ($LASTEXITCODE) { throw 'Regression checks failed' }
+'@
+        $summary = ''
+        if ($testName -eq 'regression') {
+            $summary = 'printf "Specification grid: %u cases; max errors: V=%lu mV, Ipeak=%lu hundredths mA, P=%lu mW\n", spec_cases, spec_voltage_error_mV, spec_peak_error_mA_x100, spec_power_error_mW'
+        }
+        $gdbCommands.Replace('TEST',$testName).Replace('SUMMARY',$summary) | Set-Content -LiteralPath "tests/Debug/$testName.gdb"
+        & "$Toolchain/avr-gdb.exe" -q -batch "tests/Debug/$testName.elf" -x "tests/Debug/$testName.gdb"
+        if ($LASTEXITCODE) { throw "$testName checks failed" }
+    }
 } finally {
     Pop-Location
 }

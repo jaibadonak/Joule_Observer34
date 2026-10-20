@@ -14,6 +14,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include "uart_protocol.h"
+#include "waveform_receiver.h"
 
 // ---- Settings ----------------------------------------------------------------
 
@@ -46,6 +47,8 @@ uint32_t readingsAt = 0;    // millis() when the last $M line arrived
 long vrms_mV = 0, irms_mA = 0, power_mW = 0;
 long total_mWh = 0;
 bool haveEnergy = false;
+long apparent_mVA = 0, power_factor_x1000 = -1, frequency_mHz = 0;
+bool haveDerived = false;
 long peak_mA = 0;
 bool havePeak = false;
 uint32_t sequence = 0, waveSequence = 0, waveformAt = 0, streamEpoch = 1;
@@ -60,7 +63,11 @@ const char *CALIBRATION_KEYS[] = {"adc_reference_mV", "voltage_scale_x100", "cur
 
 int pairs = 0;  // samples per channel in the last $W line
 long dt_us = 0;
-int32_t v_mV[MAX_PAIRS], i_mA[MAX_PAIRS];
+int32_t v_mV[MAX_PAIRS], i_mA[MAX_PAIRS], p_mW[MAX_PAIRS];
+long captureStats[5][4]; // min, max, mean, RMS; V/I/P/raw V/raw I
+bool haveCaptureStats = false, havePowerWave = false;
+// Assemble a complete AVR capture before publishing it to HTTP clients.
+waveform_receiver_t incomingWave = {};
 int32_t v_adc[MAX_PAIRS], i_adc[MAX_PAIRS];
 bool haveRawWave = false;
 
@@ -71,7 +78,9 @@ void handleLine(char *line) {
 
   if (strncmp(line, "BOOT JouleObserver", 18) == 0) {
     haveReadings = haveEnergy = false;
-    havePeak = false;
+    havePeak = haveDerived = false;
+    incomingWave.active = 0;
+    haveCaptureStats = havePowerWave = false;
     haveCalibration = false;
     pairs = 0;
     haveRawWave = false;
@@ -84,10 +93,9 @@ void handleLine(char *line) {
     displayMode = mode;
     modeAt = millis();
   } else if (strncmp(line, "$M,", 3) == 0) {
-    long n[5];
-    int count = readNumbers(line + 2, n, 5);
-    if (count < 3 || n[0] < 0 || n[1] < 0 || (count >= 4 && n[3] < 0) ||
-        (count >= 5 && n[4] < 0)) {
+    long n[8];
+    int count = readNumbers(line + 2, n, 8);
+    if (!validMeasurements(n, count)) {
       invalidPackets++; return;
     }
     vrms_mV = n[0];
@@ -97,20 +105,25 @@ void handleLine(char *line) {
     if (haveEnergy) total_mWh = n[3];
     havePeak = count >= 5;
     if (havePeak) peak_mA = n[4];
+    haveDerived = count >= 8;
+    if (haveDerived) { apparent_mVA = n[5]; power_factor_x1000 = n[6]; frequency_mHz = n[7]; }
     haveReadings = true;
     readingsAt = millis();
     sequence++;
-  } else if (strncmp(line, "$Y,", 3) == 0) {
-    static long n[5 + 2 * MAX_PAIRS];
-    int count = readNumbers(line + 2, n, 5 + 2 * MAX_PAIRS);
-    if (!validRawCapture(n, count, MAX_PAIRS)) { invalidPackets++; return; }
-    dt_us = n[0]; pairs = (count - 5) / 2; haveRawWave = true;
-    for (int k = 0; k < pairs; k++) {
-      v_adc[k] = n[5 + 2*k]; i_adc[k] = n[6 + 2*k];
-      v_mV[k] = scaleRawSample(v_adc[k], n[1], n[3], 100);
-      i_mA[k] = scaleRawSample(i_adc[k], n[2], n[4], 1000);
-    }
-    waveformAt = millis(); waveSequence++;
+  } else if (strncmp(line,"$B,",3)==0 || strncmp(line,"$S,",3)==0 ||
+             strncmp(line,"$G,",3)==0 || strcmp(line,"$E")==0) {
+    int result=waveform_receive(&incomingWave,line,millis());
+    if (result==WAVE_INVALID) { invalidPackets++; return; }
+    if (result!=WAVE_COMPLETE) return;
+    pairs=incomingWave.count; dt_us=incomingWave.dt_us;
+    memcpy(v_mV,incomingWave.values[0],pairs*sizeof(long));
+    memcpy(i_mA,incomingWave.values[1],pairs*sizeof(long));
+    memcpy(p_mW,incomingWave.values[2],pairs*sizeof(long));
+    memcpy(v_adc,incomingWave.values[3],pairs*sizeof(long));
+    memcpy(i_adc,incomingWave.values[4],pairs*sizeof(long));
+    memcpy(captureStats,incomingWave.stats,sizeof captureStats);
+    haveRawWave=havePowerWave=haveCaptureStats=true;
+    waveformAt=incomingWave.started_at; waveSequence++;
   } else if (strncmp(line, "$W,", 3) == 0 || strncmp(line, "$X,", 3) == 0) {
     const bool raw = line[1] == 'X';
     const int stride = raw ? 4 : 2;
@@ -122,6 +135,7 @@ void handleLine(char *line) {
     dt_us = n[0];
     pairs = min((count - 1) / stride, MAX_PAIRS);
     haveRawWave = raw;
+    havePowerWave = haveCaptureStats = false;
     for (int k = 0; k < pairs; k++) {
       v_mV[k] = n[1 + stride * k];
       i_mA[k] = n[2 + stride * k];
@@ -190,8 +204,9 @@ void mockAtmega() {
   char text[512];
   static double mockEnergy = 0;
   mockEnergy += power * 1000.0 * 0.5 / 3600.0;
-  int len = snprintf(text, sizeof text, "$M,%ld,%ld,%ld,%ld,%ld\n$W,200", lroundf(vrms * 1000),
-                     lroundf(irms * 1000), lroundf(power * 1000), lround(mockEnergy), lroundf(irms * 1000 * sqrtf(2)));
+  int len = snprintf(text, sizeof text, "$M,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld\n$W,200", lroundf(vrms * 1000),
+                     lroundf(irms * 1000), lroundf(power * 1000), lround(mockEnergy), lroundf(irms * 1000 * sqrtf(2)),
+                     lroundf(vrms*irms*1000),lroundf(cosf(phi)*1000),500000L);
   for (int k = 0; k < 20; k++) {  // 2 cycles, 200 us apart, from a rising zero crossing
     float wt = 2 * PI * 500 * k * 200e-6f;
     len += snprintf(text + len, sizeof text - len, ",%ld,%ld",
@@ -240,6 +255,12 @@ void sendData() {
   json += ",\"ipeak_mA\":";
   if (haveReadings && havePeak) json += peak_mA;
   else json += "null";
+  json += ",\"apparent_mVA\":";
+  if (haveDerived) json += apparent_mVA; else json += "null";
+  json += ",\"power_factor_x1000\":";
+  if (haveDerived && power_factor_x1000>=0) json += power_factor_x1000; else json += "null";
+  json += ",\"frequency_mHz\":";
+  if (haveDerived && frequency_mHz>0) json += frequency_mHz; else json += "null";
   json += ",\"power_mW\":";
   json += power_mW;
   json += ",\"energy_mWh\":";
@@ -286,7 +307,19 @@ void sendData() {
     if (k) json += ',';
     json += i_adc[k];
   }
-  json += "]}";
+  json += "],\"p_mW\":[";
+  for (int k=0; havePowerWave && k<pairs; k++) { if(k)json+=','; json+=p_mW[k]; }
+  json += "],\"capture_stats\":";
+  if (haveCaptureStats) {
+    json+='[';
+    for(int channel=0;channel<5;channel++) {
+      if(channel)json+=','; json+='[';
+      for(int field=0;field<4;field++) { if(field)json+=','; json+=captureStats[channel][field]; }
+      json+=']';
+    }
+    json+=']';
+  } else json+="null";
+  json += "}";
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
 }

@@ -34,18 +34,19 @@ uint16_t adc_offset(volatile uint16_t *block) {
 // A partial last cycle biases a plain block mean, creating alternating V*I peaks.
 // Integrate from the first to last qualified rising crossing of the same level.
 // Q8 sample positions preserve fractional boundaries without floating point.
-uint32_t adc_cycle_offset_x100(volatile uint16_t *block) {
+typedef struct {
+    uint16_t first, last;
+    uint8_t crossings;
+} cycle_window_t;
+
+static uint8_t find_complete_cycles(volatile uint16_t *block, cycle_window_t *window) {
     uint16_t lo = 1023, hi = 0;
-    uint32_t total = 0;
     for (uint16_t k = 0; k < samples; k++) {
-        uint16_t value = block[k];
-        if (value < lo) lo = value;
-        if (value > hi) hi = value;
-        total += value;
+        if (block[k] < lo) lo = block[k];
+        if (block[k] > hi) hi = block[k];
     }
-    uint32_t fallback = (total * 100UL + samples / 2) / samples;
     uint16_t range = hi - lo;
-    if (range < 16) return fallback;
+    if (range < 16) return 0;
     uint16_t level2 = lo + hi;
     uint16_t low_gate = lo + range * 3U / 8U;
     uint16_t first = 0, last = 0, shortest = 65535, longest = 0;
@@ -67,7 +68,19 @@ uint32_t adc_cycle_offset_x100(volatile uint16_t *block) {
     }
     // Reject weak/short/noisy records instead of inventing a periodic correction.
     if (crossings < 2 || shortest < 8U*256U || longest-shortest > longest/5U)
-        return fallback;
+        return 0;
+    window->first = first; window->last = last; window->crossings = crossings;
+    return 1;
+}
+
+uint32_t adc_cycle_offset_x100(volatile uint16_t *block) {
+    cycle_window_t window;
+    if (!find_complete_cycles(block, &window)) {
+        uint32_t total = 0;
+        for (uint16_t k = 0; k < samples; k++) total += block[k];
+        return (total * 100UL + samples/2) / samples;
+    }
+    uint16_t first = window.first, last = window.last;
     uint32_t area = 0;
     for (uint16_t k = first/256U; k <= last/256U && k < samples-1; k++) {
         uint16_t start = k == first/256U ? first%256U : 0;
@@ -220,3 +233,70 @@ uint32_t energy_mWh(void) {
 	return energy_total_mWh;
 }
 
+
+// Vrms[mV] * Irms[hundredths of mA] -> apparent power in milli-VA.
+uint32_t calc_apparent_power_mVA(uint32_t voltage_mV, uint32_t current_mA_x100) {
+    return ((uint64_t)voltage_mV * current_mA_x100 + 50000UL) / 100000UL;
+}
+
+// PF is P/S, sent in thousandths. -1 means unavailable (zero S or invalid ratio).
+int16_t calc_power_factor_x1000(uint32_t power_mW, uint32_t apparent_mVA) {
+    if (!apparent_mVA || power_mW > apparent_mVA) return -1;
+    return ((uint64_t)power_mW * 1000UL + apparent_mVA/2) / apparent_mVA;
+}
+
+// Frequency from interpolated voltage crossings. Zero means no reliable cycles.
+uint32_t calc_frequency_mHz(void) {
+    cycle_window_t window;
+    if (!find_complete_cycles(v_samples, &window)) return 0;
+    uint32_t elapsed = (uint32_t)(window.last - window.first) * ADC_SAMPLE_US;
+    uint64_t numerator = (uint64_t)(window.crossings - 1) * 256UL * 1000000000ULL;
+    return (numerator + elapsed/2) / elapsed;
+}
+
+static int32_t rounded_signed_divide(int64_t value, int32_t divisor) {
+    return (value + (value < 0 ? -divisor/2 : divisor/2)) / divisor;
+}
+
+int32_t scale_adc_sample(uint16_t raw, uint32_t dc_x100, uint32_t gain, int32_t divisor) {
+    int64_t centred = (int32_t)raw * 100L - (int32_t)dc_x100;
+    return rounded_signed_divide(centred * gain, 100L * divisor);
+}
+
+void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
+                          waveform_sample_t *value) {
+    value->voltage_mV = scale_adc_sample(v_samples[index], voltage_dc, V_MV_PER_COUNT_X100, 100);
+    value->current_mA = scale_adc_sample(i_samples[index], current_dc, I_MA_PER_COUNT_X1000, 1000);
+    int32_t voltage = (int32_t)v_samples[index]*100L - (int32_t)voltage_dc;
+    int32_t current = (int32_t)i_samples[index]*100L - (int32_t)current_dc;
+    // Use unrounded ADC values for V*I; retain the sign of instantaneous power.
+    value->power_mW = rounded_signed_divide((int64_t)voltage * current * P_MW_PER_COUNT2_X10000,
+                                           100000000L);
+}
+
+void capture_stats_add(capture_stats_t *stats, int32_t value) {
+    if (!stats->count || value < stats->minimum) stats->minimum = value;
+    if (!stats->count || value > stats->maximum) stats->maximum = value;
+    stats->sum += value;
+    stats->sum_squares += (int64_t)value * value;
+    stats->count++;
+}
+
+static uint32_t square_root_64(uint64_t value) {
+    uint64_t result = 0, bit = 1ULL << 62;
+    while (bit > value) bit >>= 2;
+    while (bit) {
+        if (value >= result + bit) { value -= result + bit; result = (result >> 1) + bit; }
+        else result >>= 1;
+        bit >>= 2;
+    }
+    return (uint32_t)result;
+}
+
+int32_t capture_stats_mean(const capture_stats_t *stats) {
+    return stats->count ? rounded_signed_divide(stats->sum, stats->count) : 0;
+}
+
+uint32_t capture_stats_rms(const capture_stats_t *stats) {
+    return stats->count ? square_root_64(stats->sum_squares / stats->count) : 0;
+}

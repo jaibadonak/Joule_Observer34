@@ -18,10 +18,11 @@ static volatile uint16_t simulated_adc;
 #include "../../Application/src/uart_protocol.h"
 
 volatile uint16_t test_failures = 0;
+volatile uint16_t failure_lines[16];
 volatile uint16_t spec_cases = 0;
 volatile uint32_t spec_voltage_error_mV = 0, spec_peak_error_mA_x100 = 0;
 volatile uint32_t spec_power_error_mW = 0;
-#define CHECK(condition) do { if (!(condition)) test_failures++; } while (0)
+#define CHECK(condition) do { if (!(condition)) { if (test_failures<16) failure_lines[test_failures]=__LINE__; test_failures++; } } while (0)
 
 // Integer sine, amplitude 1000, 20 points/cycle.
 static const int16_t sine[20] = {
@@ -37,6 +38,17 @@ int main(void) {
     UCSR0A = (1<<U2X0); // simulate a bootloader leaving double-speed UART enabled
     uart_init();
     CHECK(UBRR0L == 12 && UBRR0H == 0 && !(UCSR0A & (1<<U2X0)));
+    CHECK(calc_apparent_power_mVA(14000,40000) == 5600);
+    CHECK(calc_power_factor_x1000(2800,5600) == 500);
+    CHECK(calc_power_factor_x1000(0,0) == -1);
+    CHECK(calc_power_factor_x1000(5601,5600) == -1);
+    capture_stats_t stats_check = {0};
+    capture_stats_add(&stats_check,-3000); capture_stats_add(&stats_check,4000);
+    CHECK(stats_check.minimum == -3000 && stats_check.maximum == 4000);
+    CHECK(capture_stats_mean(&stats_check) == 500 && capture_stats_rms(&stats_check) == 3535);
+    capture_stats_t large_stats = {0};
+    for (uint16_t k=0;k<samples;k++) capture_stats_add(&large_stats,-30000000L);
+    CHECK(capture_stats_rms(&large_stats)==30000000UL); // 64-bit square/accumulation
     // Independent ideal R-L source grid: 12.6/14/15.4 V, 490/500/510 Hz,
     // 2.5/5/7.5 VA, PF .6/.8/.99, and three acquisition phases.
     // Full-scale assumptions: 15.4 V, 841.8 mA peak, 7.5 W.
@@ -63,6 +75,10 @@ int main(void) {
         float ei = fabsf(calc_current_peak_mA()-ipeak);
         float ep = fabsf(calc_power_mW()-apparent*pf*1000);
         CHECK(ev <= 770 && ei <= 42.09f && ep <= 375);
+        uint32_t apparent_result = calc_apparent_power_mVA(calc_voltage_rms_mV(),calc_current_rms_mA_x100());
+        CHECK(fabsf(apparent_result - (2.5f + si*2.5f)*1000) < 375);
+        CHECK(abs(calc_power_factor_x1000(calc_power_mW(),apparent_result)-(int16_t)(pf*1000)) < 50);
+        CHECK(labs((int32_t)calc_frequency_mHz()-(int32_t)(hz*1000)) < 200);
         CHECK(fabsf(calc_current_rms_mA_x100()/100.0f-irms_mA) <= 29.762f);
         if (ev > spec_voltage_error_mV) spec_voltage_error_mV = (uint32_t)ceilf(ev);
         if (ei*100 > spec_peak_error_mA_x100) spec_peak_error_mA_x100 = (uint32_t)ceilf(ei*100);
@@ -106,13 +122,13 @@ int main(void) {
     for (uint16_t k = 0; k < samples; k++) i_samples[k] = 360 + (k & 1);
     CHECK(adc_cycle_offset_x100(i_samples) == 36050UL);
     // Negative half-cycles must stay negative despite unsigned calibration constants.
-    CHECK(scaleRawSample(245, 42200, 10926, 100) == -19339);
-    CHECK(scaleRawSample(599, 42200, 10926, 100) == 19339);
-    CHECK(scaleRawSample(276, 42200, 3877, 1000) == -566);
-    CHECK(scaleRawSample(568, 42200, 3877, 1000) == 566);
-    CHECK(scaleRawSample(422, 42200, 10926, 100) == 0);
-    CHECK(scaleRawSample(0, 102300, 60000, 100) == -613800L);
-    CHECK(scaleRawSample(422, 42250, 10926, 100) == -55); // fractional bias retained
+    CHECK(scale_adc_sample(245, 42200, 10926, 100) == -19339);
+    CHECK(scale_adc_sample(599, 42200, 10926, 100) == 19339);
+    CHECK(scale_adc_sample(276, 42200, 3877, 1000) == -566);
+    CHECK(scale_adc_sample(568, 42200, 3877, 1000) == 566);
+    CHECK(scale_adc_sample(422, 42200, 10926, 100) == 0);
+    CHECK(scale_adc_sample(0, 102300, 60000, 100) == -613800L);
+    CHECK(scale_adc_sample(422, 42250, 10926, 100) == -55); // fractional bias retained
     long raw_capture[9] = {104, 42200, 36000, 10926, 3877, 245, 360, 599, 360};
     CHECK(validRawCapture(raw_capture, 9, 200));
     CHECK(!validRawCapture(raw_capture, 407, 200));
@@ -219,7 +235,7 @@ int main(void) {
     // A half-count RMS signal must survive mean-square rounding. This used
     // to produce zero despite a varying ADC1 input. True RMS is 0.5 counts.
     for (uint16_t k = 0; k < samples; k++) i_samples[k] = 422 + (k & 1);
-    CHECK(calc_current_rms_mA_x100() == 194); // nearest 0.01 mA, rather than zero
+    CHECK(calc_current_rms_mA_x100() == (uint32_t)lroundf(0.5f*I_MA_PER_COUNT_X1000/10.0f));
     CHECK(adc_rms_counts_x100(i_samples) == 50);
     // Different channel bias must not erase AC current.
     for (uint16_t k = 0; k < samples; k++)
@@ -237,7 +253,9 @@ int main(void) {
     CHECK(calc_power_mW() > 5300 && calc_power_mW() < 5550);
     for (uint16_t k = 0; k < samples; k++)
         v_samples[k] = i_samples[k] = (k & 1) ? 1023 : 0;
-    CHECK(calc_power_mW() > 110000 && calc_power_mW() < 112000);
+    float full_scale_power = 511.5f*511.5f*(V_MV_PER_COUNT_X100/100.0f)
+                            *(I_MA_PER_COUNT_X1000/1000.0f)/1000.0f;
+    CHECK(fabsf(calc_power_mW()-full_scale_power) < full_scale_power*0.001f);
     CHECK(adc_rms_counts_x100(v_samples) == 51150); // maximum 10-bit variance
 
     // Compare the fixed-point path to an independent floating calculation,
@@ -267,7 +285,8 @@ int main(void) {
             v_samples[k] = 422 + (int16_t)lroundf(177.0f * sinf(phase));
             i_samples[k] = 300 + (int16_t)lroundf(146.0f * sinf(phase - 0.9272952f));
         }
-        CHECK(calc_voltage_rms_mV() > 13500 && calc_voltage_rms_mV() < 13900);
+        float expected_voltage = 177*0.70710678f*(V_MV_PER_COUNT_X100/100.0f);
+        CHECK(fabsf(calc_voltage_rms_mV()-expected_voltage) < expected_voltage*0.02f);
         CHECK(calc_current_rms_mA_x100() > 39000 && calc_current_rms_mA_x100() < 41000);
         CHECK(calc_power_mW() > 3100 && calc_power_mW() < 3500);
     }

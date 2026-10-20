@@ -28,9 +28,12 @@ void uart_send_measurements(int32_t vrms_mV,
                             int32_t irms_mA,
                             int32_t power_mW,
                             uint32_t energy_mWh,
-                            uint32_t peak_mA);
+                            uint32_t peak_mA,
+                            uint32_t apparent_mVA,
+                            int16_t power_factor_x1000,
+                            uint32_t frequency_mHz);
 
-// $Y: full 200-sample raw blocks, 104 us apart, with capture means and gains.
+// Full capture: $B begin, $S calculated/raw samples, $G statistics, $E end.
 void uart_send_waveform(void);
 void uart_send_calibration(void);
 

@@ -6,13 +6,6 @@
 #include <string.h>
 #include <stdint.h>
 
-// Signed fractional-mean scaling for $Y; int64_t also covers maximum gain.
-static inline long scaleRawSample(long raw, long mean_x100, long gain, long divisor) {
-    int64_t value = ((int64_t)raw * 100 - mean_x100) * gain;
-    long denominator = 100 * divisor;
-    return (long)((value + (value < 0 ? -denominator/2 : denominator/2)) / denominator);
-}
-
 // Validate every field, including optional fields beyond the output capacity.
 // Return the total field count, or -1. Never write beyond out[maxCount - 1].
 static inline int readNumbers(const char *text, long *out, int maxCount) {
@@ -30,6 +23,13 @@ static inline int readNumbers(const char *text, long *out, int maxCount) {
         text = end;
     }
     return *text == '\0' ? count : -1;
+}
+
+static inline int validMeasurements(const long *n, int count) {
+    if (count<3 || count==6 || count==7 || n[0]<0 || n[1]<0 ||
+        (count>=4 && n[3]<0) || (count>=5 && n[4]<0)) return 0;
+    if (count>=8 && (n[5]<0 || n[6]<-1 || n[6]>1000 || n[7]<0)) return 0;
+    return 1;
 }
 
 static inline int parseDisplayMode(const char *line) {

@@ -10,10 +10,11 @@ vm.runInNewContext(scripts[0], math);
 const j = math.module.exports;
 assert.equal(j.pf({vrms_mV:14000,irms_mA:0,power_mW:0}), null);
 assert.equal(j.pf({vrms_mV:14000,irms_mA:100,power_mW:2000}), null);
-assert.equal(j.pf({vrms_mV:14000,irms_mA:100,power_mW:700}), .5);
+assert.equal(j.pf({power_factor_x1000:500}), .5);
+assert.equal(j.apparent({apparent_mVA:5600}),5.6);
+assert.equal(j.apparent({vrms_mV:14000,irms_mA:400}),null);
 const wave = Array.from({length:32},(_,k)=>Math.sin(2*Math.PI*500*k*.000104)*19000);
-assert.ok(Math.abs(j.frequency(wave,104)-500)<2);
-assert.equal(j.frequency(Array(32).fill(360),104),null);
+assert.equal(j.frequency,undefined); // live frequency must come from AVR telemetry
 assert.equal(j.wave({dt_us:104,v_mV:[1,2],i_mA:[1]}),false);
 assert.equal(j.valid({source:'uart',age_ms:null,vrms_mV:0,irms_mA:0,power_mW:0}),true);
 assert.equal(j.valid({source:'uart',age_ms:-1,vrms_mV:0,irms_mA:0,power_mW:0}),false);
@@ -62,7 +63,7 @@ for(let k=1;k<8;k++){context.packet={...packet,sequence:50+k,calibration:{...cal
 assert.equal(element('download-calibration').disabled,false);
 element('hold-calibration').events.click();
 assert.match(element('cal-progress').textContent,/HELD/);
-context.packet={...packet,calibration:{...calibration,age_ms:4000}};
+context.packet={...packet,calibration:{...calibration,age_ms:20000}};
 vm.runInContext('accept(packet);updateCalibration()',context);
 assert.equal(element('download-calibration').disabled,true); // held data cannot bypass disconnected/stale telemetry
 vm.runInContext('networkError=true; refreshStatus(); updateCalibration()',context);
@@ -73,7 +74,7 @@ vm.runInContext('accept(packet)',context);
 assert.equal(vm.runInContext('history.length',context),1);
 assert.equal(element('energy').textContent,'—');
 assert.equal(vm.runInContext('calibrationHeld',context),null);
-context.packet={...packet,sequence:52,epoch:2,calibration:{...calibration,age_ms:4000}};
+context.packet={...packet,sequence:52,epoch:2,calibration:{...calibration,age_ms:20000}};
 vm.runInContext('accept(packet); updateCalibration()',context);
 assert.equal(element('download-calibration').disabled,true);
 vm.runInContext("channel='e';draw();",context);
@@ -82,7 +83,7 @@ console.log('Dashboard math, protocol states, calibration and history tests pass
 
 // The raw view uses actual unmodified ADC values, retains bias and disables overlay.
 context.packet={...packet,sequence:53,epoch:2,dt_us:104,wave_age_ms:0,
-  v_mV:[-19339,0,19339],i_mA:[-566,0,566],v_adc:[245,422,599],i_adc:[276,422,568]};
+  v_mV:[-19339,0,19339],i_mA:[-566,0,566],p_mW:[10946,0,10946],v_adc:[245,422,599],i_adc:[276,422,568],capture_stats:[[-19339,19339,0,15790],[-566,566,0,462],[0,10946,7297,8937],[245,599,422,446],[276,568,422,438]]};
 vm.runInContext("accept(packet); channel='v';view='wave';",context);
 element('signal-scale').value='raw';
 element('overlay').checked=true;
@@ -97,7 +98,7 @@ assert.equal(element('stat-1').textContent,'276 counts');
 element('signal-scale').value='scaled';element('overlay').checked=false;
 element('signal-scale').events.change();
 assert.equal(element('stat-1').textContent,'-566 mA');
-assert.equal(element('stat-label-3').textContent,'Window RMS');
+assert.equal(element('stat-label-3').textContent,'Capture RMS');
 context.packet={...context.packet,v_adc:[],i_adc:[]};
 vm.runInContext('accept(packet)',context);
 element('signal-scale').value='raw';element('signal-scale').events.change();
@@ -147,3 +148,11 @@ assert.equal(element('display-mode').textContent,'Current peak (mA)');
 context.packet={...context.packet,ipeak_mA:null};vm.runInContext('accept(packet)',context);
 assert.equal(element('current-peak').textContent,'Peak — mA');
 assert.equal(j.valid({...packet,ipeak_mA:-1}),false);
+
+// Display only the transmitted values, even when input summaries would imply others.
+context.packet={...packet,epoch:5,sequence:301,apparent_mVA:6400,power_factor_x1000:567,frequency_mHz:499321};
+vm.runInContext('accept(packet)',context);
+assert.equal(element('apparent').textContent,'6.40 VA');
+assert.equal(element('pf').textContent,'0.57');
+assert.equal(element('frequency').textContent,'499.3 Hz');
+console.log('AVR-only live measurement display tests passed.');

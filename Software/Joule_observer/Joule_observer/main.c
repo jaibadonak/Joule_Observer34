@@ -58,6 +58,8 @@ int main(void) {
     uint32_t current_mA_x100 = 0;
 #endif
     uint32_t vrms_mV = 0, current_mA = 0, peak_mA = 0, power_mW = 0;
+    uint32_t apparent_mVA = 0, frequency_mHz = 0;
+    int16_t power_factor_x1000 = -1;
 
     display_init();
     uart_init();
@@ -101,6 +103,7 @@ int main(void) {
         current_mA = 400;
         peak_mA = 566;
         power_mW = 5480;
+        apparent_mVA = 5480; power_factor_x1000 = 1000; frequency_mHz = 500000;
 #else
         if (adc_capture_done()) {
             vrms_mV = calc_voltage_rms_mV();
@@ -108,6 +111,9 @@ int main(void) {
             current_mA = (current_mA_x100 + 50) / 100;
             peak_mA = calc_current_peak_mA();
             power_mW = calc_power_mW();
+            apparent_mVA = calc_apparent_power_mVA(vrms_mV, current_mA_x100);
+            power_factor_x1000 = calc_power_factor_x1000(power_mW, apparent_mVA);
+            frequency_mHz = calc_frequency_mHz();
             // Publish fresh values before the long raw-waveform UART transfer.
             display_update(vrms_mV, peak_mA, power_mW, energy_mWh());
             if (raw_due) {
@@ -126,7 +132,8 @@ int main(void) {
         } else if ((uint32_t)(calcs_ticks() - capture_started) >= NO_SIGNAL_TICKS) {
             adc_status_t status;
             adc_get_status(&status);
-            vrms_mV = current_mA = peak_mA = power_mW = 0;
+            vrms_mV = current_mA = peak_mA = power_mW = apparent_mVA = frequency_mHz = 0;
+            power_factor_x1000 = -1;
             adc_start_capture();  // atomically abort partial captures before rearming
             capture_started = calcs_ticks();
             send_timeout_status(&status);
@@ -143,9 +150,9 @@ int main(void) {
         if (uart_ticks >= UART_PERIOD_TICKS) {
             uart_ticks %= UART_PERIOD_TICKS;
 #ifdef DISPLAY_SELF_TEST
-            uart_send_measurements(vrms_mV, current_mA, power_mW, 123, peak_mA);
+            uart_send_measurements(vrms_mV, current_mA, power_mW, 123, peak_mA, apparent_mVA, power_factor_x1000, frequency_mHz);
 #else
-            uart_send_measurements(vrms_mV, current_mA, power_mW, energy_mWh(), peak_mA);
+            uart_send_measurements(vrms_mV, current_mA, power_mW, energy_mWh(), peak_mA, apparent_mVA, power_factor_x1000, frequency_mHz);
 #endif
 #ifndef DISPLAY_SELF_TEST
             raw_due = 1;

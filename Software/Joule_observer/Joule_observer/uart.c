@@ -12,6 +12,7 @@
 #include "config.h"
 #include "adc.h"
 #include "computation.h"
+#include "display.h"
 
 #define UART_BAUD 9600UL
 
@@ -117,7 +118,10 @@ void uart_send_measurements(int32_t vrms_mV,
                             int32_t irms_mA,
                             int32_t power_mW,
                             uint32_t total_mWh,
-                            uint32_t peak_mA)
+                            uint32_t peak_mA,
+                            uint32_t apparent_mVA,
+                            int16_t power_factor_x1000,
+                            uint32_t frequency_mHz)
 {
     // Start the message with "$M," to identify it as measurement data.
     uart_string("$M,");
@@ -140,23 +144,48 @@ void uart_send_measurements(int32_t vrms_mV,
     uart_int32((int32_t)total_mWh);
     uart_transmit(',');
     uart_int32((int32_t)peak_mA);
+    uart_transmit(','); uart_int32(apparent_mVA);
+    uart_transmit(','); uart_int32(power_factor_x1000);
+    uart_transmit(','); uart_int32(frequency_mHz);
 
     // End the message with carriage return and newline.
     // This lets the receiver recognise the end of the message.
     uart_string("\r\n");
 }
 
+// A begin/sample/stats/end stream keeps each line short and readable.
+// No second waveform buffer is needed on the 2 KB AVR.
 void uart_send_waveform(void) {
-    // Same cycle-based DC correction as scalar power. Raw ADC samples stay untouched.
-    uart_string("$Y,104,"); uart_int32(adc_cycle_offset_x100(v_samples));
-    uart_transmit(','); uart_int32(adc_cycle_offset_x100(i_samples));
-    uart_transmit(','); uart_int32(V_MV_PER_COUNT_X100);
-    uart_transmit(','); uart_int32(I_MA_PER_COUNT_X1000);
+    uint32_t voltage_dc = adc_cycle_offset_x100(v_samples);
+    uint32_t current_dc = adc_cycle_offset_x100(i_samples);
+    capture_stats_t stats[5] = {{0}}; // V, I, P, raw V, raw I
+    uart_string("$B,"); uart_int32(ADC_SAMPLE_US);
+    uart_transmit(','); uart_int32(samples); uart_string("\r\n");
+    uint8_t last_mode = 255;
     for (uint16_t k = 0; k < samples; k++) {
-        uart_transmit(','); uart_int32(v_samples[k]);
-        uart_transmit(','); uart_int32(i_samples[k]);
+        waveform_sample_t value;
+        calc_waveform_sample(k, voltage_dc, current_dc, &value);
+        int32_t values[5] = {value.voltage_mV, value.current_mA, value.power_mW,
+                            v_samples[k], i_samples[k]};
+        uart_string("$S,"); uart_int32(k);
+        for (uint8_t channel = 0; channel < 5; channel++) {
+            capture_stats_add(&stats[channel], values[channel]);
+            uart_transmit(','); uart_int32(values[channel]);
+        }
+        uart_string("\r\n");
+        // The display scrolls while UART blocks; keep its mode report current.
+        uint8_t mode = display_current_quantity();
+        if (mode != last_mode) { uart_send_mode(mode); last_mode = mode; }
     }
-    uart_string("\r\n");
+    for (uint8_t channel = 0; channel < 5; channel++) {
+        uart_string("$G,"); uart_int32(channel);
+        uart_transmit(','); uart_int32(stats[channel].minimum);
+        uart_transmit(','); uart_int32(stats[channel].maximum);
+        uart_transmit(','); uart_int32(capture_stats_mean(&stats[channel]));
+        uart_transmit(','); uart_int32(capture_stats_rms(&stats[channel]));
+        uart_string("\r\n");
+    }
+    uart_string("$E\r\n");
 }
 
 static void uart_calibration_channel(volatile uint16_t *block) {

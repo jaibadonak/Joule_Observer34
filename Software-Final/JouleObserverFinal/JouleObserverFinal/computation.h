@@ -69,6 +69,9 @@ typedef struct {
 	uint16_t count;
 } capture_stats_t;
 
+//main reason for strucs is to limit how many variables there are. 
+//with a typedef struct, you can define a variable V to a struc allowing it to have these subsections of each variable.
+
 int32_t scale_adc_sample(uint16_t raw, uint32_t dc_x100, uint32_t gain, int32_t divisor);
 void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
 waveform_sample_t *value);

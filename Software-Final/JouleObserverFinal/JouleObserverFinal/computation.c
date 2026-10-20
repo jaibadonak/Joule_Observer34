@@ -7,11 +7,17 @@
 
 
 #include <avr/io.h>
-#include <math.h>
 #include <avr/interrupt.h>
 #include <util/atomic.h>
 #include "adc.h"
 #include "computation.h"
+
+// Current channel sign, set once in calibration.h (N3). Applied wherever a centred current is formed.
+#if I_CHANNEL_INVERTED
+#define I_SIGN (-1L)
+#else
+#define I_SIGN (1L)
+#endif
 
 static uint32_t energy_acc = 0;             // energy not yet added to the total, in mW x ticks
 static uint32_t energy_total_mWh = 0;       // energy so far
@@ -19,21 +25,8 @@ static volatile uint16_t timer1_overflows = 0;
 //block is pretty much where the samples are, the address of ethier one the samples
 
 
-// Average of one block = its DC offset. The total is 32 bit because 200 samples of about 422
-// add up to more than a 16 bit number can hold. Works out when called, so it uses the block
-// that was just captured (it can't run at start up, the samples don't exist yet).
-uint16_t adc_offset(volatile uint16_t *block) {
-	uint32_t total = 0;
-
-	for (uint16_t k = 0; k < samples; k++) {
-		total = total + block[k];
-	}
-
-	return (uint16_t)((total + samples / 2) / samples);       // + samples/2 rounds to the nearest count
-}
-
 // A partial last cycle biases a plain block mean, creating alternating V*I peaks.
-// Integrate from the first to last qualified rising crossing of the same level.
+// Average from the first to last qualified rising crossing of the same level.
 // Q8 sample positions preserve fractional boundaries without floating point.
 typedef struct {
     uint16_t first, last;
@@ -70,7 +63,7 @@ static uint8_t find_complete_cycles(volatile uint16_t *block, cycle_window_t *wi
             else {
                 uint16_t period = position - last; //record WHOLE cycle 
                 if (period < shortest) shortest = period; //shortest weve seen? remeber it
-                if (period > longest) longest = period;////shortest weve seen? remeber it
+                if (period > longest) longest = period; //longest weve seen? remeber it
             }
             last = position; crossings++; below = 0;
         }
@@ -82,26 +75,35 @@ static uint8_t find_complete_cycles(volatile uint16_t *block, cycle_window_t *wi
     return 1; //pass
 }
 
-static uint32_t square_root_64(uint64_t value);
-
-uint32_t adc_cycle_offset_x100(volatile uint16_t *block) {
+//private function. N2
+//Sample range start ... stop-1 that covers whole cycles, or the whole block if none were found.
+//+128U /256 rounds to the nearest sample, because position is given in X256
+static void whole_cycle_range(volatile uint16_t *block, uint16_t *start, uint16_t *stop) {
     cycle_window_t window;
-	uint32_t total = 0;  
-	//if fail
-    if (!find_complete_cycles(block, &window)) {
-        uint32_t total = 0;
-        for (uint16_t k = 0; k < samples; k++) total += block[k]; //no good cycles were found, ues ordinary block average
-        return (total * 100UL + samples/2) / samples;
+    *start = 0;
+    *stop = samples;                                  // default, the whole block
+    if (find_complete_cycles(block, &window)) {
+        *start = (window.first + 128U) / 256U;        // nearest sample to first crossing
+        *stop  = (window.last  + 128U) / 256U;        // nearest sample to last crossing
     }
+}
 
-	//actual fucntion
-	//+128U /256 rounds to the enarest sample, because position is given in X256
-    uint16_t start = (window.first + 128U) / 256U;   // nearest sample to first crossing
-    uint16_t stop  = (window.last  + 128U) / 256U;   // nearest sample to last crossing
-    uint16_t n = stop - start;                       // samples in the window
-
+//private function.
+//Average of block[start] ... block[stop-1], x100. The total is 32 bit because 200 samples
+//of about 422 add up to more than a 16 bit number can hold.
+static uint32_t window_mean_x100(volatile uint16_t *block, uint16_t start, uint16_t stop) {
+    uint16_t n = stop - start;                        // samples in the window
+    uint32_t total = 0;
     for (uint16_t k = start; k < stop; k++) total += block[k]; //within those set samples, add all the samples 
-    return (total * 100UL + n / 2) / n; //return average DC_offset
+    return (total * 100UL + n / 2) / n;               // + n/2 rounds to the nearest 0.01 count
+}
+
+// DC offset over whole cycles, x100 (42237 = 422.37 counts).
+// If no good cycles were found this is the ordinary block average.
+uint32_t adc_cycle_offset_x100(volatile uint16_t *block) {
+    uint16_t start, stop;
+    whole_cycle_range(block, &start, &stop);
+    return window_mean_x100(block, start, stop);      //return average DC_offset
 }
 
 
@@ -125,43 +127,28 @@ void calcs_init(void) {
     TIMSK1 |= (1<<TOIE1);
 }
 
-// Square root of a 32-bit number, rounded down (no floating point on the AVR)
-static uint16_t square_root(uint32_t n) {
-	uint32_t result = 0;
-	uint32_t bit = 1UL << 30;               // highest power of 4 that fits
-
-	while (bit > n) {
-		bit = bit >> 2;
-	}
-	while (bit != 0) {
-		if (n >= result + bit) {
-			n = n - (result + bit);
-			result = (result >> 1) + bit;
-		} else {
-			result = result >> 1;
-		}
-		bit = bit >> 2;
-	}
-	return (uint16_t)result;
+// Square root of a 64-bit number, rounded down (no floating point on the AVR)
+static uint32_t square_root_64(uint64_t value) {
+    uint64_t result = 0, bit = 1ULL << 62;      // highest power of 4 that fits
+    while (bit > value) bit >>= 2;
+    while (bit) {
+        if (value >= result + bit) { value -= result + bit; result = (result >> 1) + bit; }
+        else result >>= 1;
+        bit >>= 2;
+    }
+    return (uint32_t)result;
 }
 
 // AC RMS in counts x100 (e.g. 31250 = 312.50 counts), before gain.
 // Offset and squares both use only the whole-cycle window, so the
 // partial last cycle can't bias either. Falls back to the whole block.
 uint16_t adc_rms_counts_x100(volatile uint16_t *block) {
-    cycle_window_t window;
-    uint16_t start = 0, stop = samples;
-
-    if (find_complete_cycles(block, &window)) {
-        start = (window.first + 128U) / 256U;   // nearest sample to first crossing
-        stop  = (window.last  + 128U) / 256U;   // nearest sample to last crossing
-    }
+    uint16_t start, stop;
+    whole_cycle_range(block, &start, &stop);
     uint16_t n = stop - start;
 
     // DC offset over the window, x100
-    uint32_t total = 0;
-    for (uint16_t k = start; k < stop; k++) total += block[k];
-    int32_t offset_x100 = (total * 100UL + n / 2) / n;
+    int32_t offset_x100 = (int32_t)window_mean_x100(block, start, stop);
 
     // Mean of (sample - offset)^2. Both sides x100, so the square is x10000
     uint64_t sum_sq = 0;
@@ -191,15 +178,38 @@ uint32_t calc_current_rms_mA_x100(void) {
 	return ((uint32_t)rms_x100 * I_MA_PER_COUNT_X1000 + 500UL) / 1000UL;
 }
 
-// Peak current = biggest |x| in the block
-uint32_t calc_current_peak_mA(void) {
-	uint32_t offset = adc_cycle_offset_x100(i_samples);
+//private function.
+//Biggest |x| between two sample indexes (from ... to-1), x100 counts.
+static uint32_t peak_x100(volatile uint16_t *block, uint32_t offset_x100, uint16_t from, uint16_t to) {
 	int32_t peak = 0;
 
-	for (uint16_t k = 0; k < samples; k++) {
-		int32_t x = (int32_t)i_samples[k]*100L - (int32_t)offset;
+	for (uint16_t k = from; k < to; k++) {
+		int32_t x = (int32_t)block[k]*100L - (int32_t)offset_x100;
 		if (x < 0) x = -x;
 		if (x > peak) peak = x;
+	}
+	return (uint32_t)peak;
+}
+
+// Peak current = average of each whole cycle's biggest |x|, so one noise spike
+// can't set the reading. N4. Falls back to the biggest |x| in the whole block.
+uint32_t calc_current_peak_mA(void) {
+	uint32_t offset = adc_cycle_offset_x100(i_samples);
+	cycle_window_t window;
+	uint32_t peak;
+
+	if (find_complete_cycles(i_samples, &window)) {
+		uint8_t cycles = window.crossings - 1;               // whole cycles in the window
+		uint32_t span = window.last - window.first;          // their total length, x256 samples
+		uint32_t peak_sum = 0;
+		for (uint8_t c = 0; c < cycles; c++) {
+			uint16_t from = (window.first + span * c / cycles + 128U) / 256U;        // start of cycle c
+			uint16_t to   = (window.first + span * (c + 1) / cycles + 128U) / 256U;  // start of cycle c+1
+			peak_sum += peak_x100(i_samples, offset, from, to);
+		}
+		peak = (peak_sum + cycles / 2) / cycles;
+	} else {
+		peak = peak_x100(i_samples, offset, 0, samples);
 	}
 
 	return ((uint64_t)peak * I_MA_PER_COUNT_X1000 + 50000UL) / 100000UL;
@@ -209,35 +219,31 @@ uint32_t calc_current_peak_mA(void) {
 // v[k] and i[k] are at the same phase (both blocks start on the VZC edge),
 // so the window found on the voltage block applies to the current block too.
 uint32_t calc_power_mW(void) {
-    cycle_window_t window;
-    uint16_t start = 0, stop = samples;
-
-    if (find_complete_cycles(v_samples, &window)) {
-        start = (window.first + 128U) / 256U;
-        stop  = (window.last  + 128U) / 256U;
-    }
+    uint16_t start, stop;
+    whole_cycle_range(v_samples, &start, &stop);
     uint16_t n = stop - start;
 
     // DC offsets over the window, x100
-    uint32_t total_v = 0, total_i = 0;
-    for (uint16_t k = start; k < stop; k++) {
-        total_v += v_samples[k];
-        total_i += i_samples[k];
-    }
-    int32_t offset_v = (total_v * 100UL + n / 2) / n;
-    int32_t offset_i = (total_i * 100UL + n / 2) / n;
+    int32_t offset_v = (int32_t)window_mean_x100(v_samples, start, stop);
+    int32_t offset_i = (int32_t)window_mean_x100(i_samples, start, stop);
 
     // Sum of centred v x i. Both x100, so each product is x10000
     int64_t sum_xy = 0;
     for (uint16_t k = start; k < stop; k++) {
         int32_t xv = (int32_t)v_samples[k] * 100L - offset_v;
-        int32_t xi = (int32_t)i_samples[k] * 100L - offset_i;
+        int32_t xi = I_SIGN * ((int32_t)i_samples[k] * 100L - offset_i);   // sign set in calibration.h
         sum_xy += (int64_t)xv * xi;
     }
 
-    int64_t mean_xy = sum_xy / ((int32_t)n * 10000L);   // counts^2
-    return ((uint64_t)mean_xy * P_MW_PER_COUNT2_X10000 + 5000UL) / 10000UL;
+    // Keep two decimals of counts^2 (N5), so the result isn't truncated to 0.41 mW steps.
+    int64_t mean_xy_x100 = sum_xy / ((int32_t)n * 100L);   // counts^2 x100
+    // Negative means power flowing back, impossible for a passive load.
+    // Most likely I_CHANNEL_INVERTED is set wrong, so show 0 rather than hide it.
+    if (mean_xy_x100 < 0) return 0;
+    // counts^2 x100 times mW per count^2 x10000 = mW x10^6
+    return ((uint64_t)mean_xy_x100 * P_MW_PER_COUNT2_X10000 + 500000UL) / 1000000UL;
 }
+
 // Add power x time to the running total
 void energy_add(uint32_t power_mW, uint32_t dt_ticks) {
 	if (power_mW > 60000UL) power_mW = 60000UL;     // keeps the multiply below inside 32 bits
@@ -264,9 +270,14 @@ uint32_t calc_apparent_power_mVA(uint32_t voltage_mV, uint32_t current_mA_x100) 
     return ((uint64_t)voltage_mV * current_mA_x100 + 50000UL) / 100000UL;
 }
 
-// PF is P/S, sent in thousandths. -1 means unavailable (zero S or invalid ratio).
+// PF is P/S, sent in thousandths. -1 means unavailable (zero S, or P well above S).
+// N6. A small overshoot near PF = 1 is rounding/noise, so it is clamped to 1.000.
 int16_t calc_power_factor_x1000(uint32_t power_mW, uint32_t apparent_mVA) {
-    if (!apparent_mVA || power_mW > apparent_mVA) return -1;
+    if (!apparent_mVA) return -1;
+    if (power_mW > apparent_mVA) {
+        if (power_mW > apparent_mVA + apparent_mVA / 50) return -1;  // more than 2% over, something is wrong
+        return 1000;                                                 // rounding overshoot, PF = 1.000
+    }
     return ((uint64_t)power_mW * 1000UL + apparent_mVA/2) / apparent_mVA;
 }
 
@@ -291,9 +302,9 @@ int32_t scale_adc_sample(uint16_t raw, uint32_t dc_x100, uint32_t gain, int32_t 
 void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
                           waveform_sample_t *value) {
     value->voltage_mV = scale_adc_sample(v_samples[index], voltage_dc, V_MV_PER_COUNT_X100, 100);
-    value->current_mA = scale_adc_sample(i_samples[index], current_dc, I_MA_PER_COUNT_X1000, 1000);
+    value->current_mA = I_SIGN * scale_adc_sample(i_samples[index], current_dc, I_MA_PER_COUNT_X1000, 1000);
     int32_t voltage = (int32_t)v_samples[index]*100L - (int32_t)voltage_dc;
-    int32_t current = (int32_t)i_samples[index]*100L - (int32_t)current_dc;
+    int32_t current = I_SIGN * ((int32_t)i_samples[index]*100L - (int32_t)current_dc);
     // Use unrounded ADC values for V*I; retain the sign of instantaneous power.
     value->power_mW = rounded_signed_divide((int64_t)voltage * current * P_MW_PER_COUNT2_X10000,
                                            100000000L);
@@ -307,17 +318,6 @@ void capture_stats_add(capture_stats_t *stats, int32_t value) {
     stats->count++;
 }
 
-static uint32_t square_root_64(uint64_t value) {
-    uint64_t result = 0, bit = 1ULL << 62;
-    while (bit > value) bit >>= 2;
-    while (bit) {
-        if (value >= result + bit) { value -= result + bit; result = (result >> 1) + bit; }
-        else result >>= 1;
-        bit >>= 2;
-    }
-    return (uint32_t)result;
-}
-
 int32_t capture_stats_mean(const capture_stats_t *stats) {
     return stats->count ? rounded_signed_divide(stats->sum, stats->count) : 0;
 }
@@ -328,7 +328,24 @@ uint32_t capture_stats_rms(const capture_stats_t *stats) {
 
 
 
-//----------------------------NOTES-----------------------------------??
-//N1:Crossing level is the midpoint. It’s stored doubled (lo + hi instead of (lo + hi)/2) so no half-count is lost to integer division. Comparisons later are written as 2*a vs level2 to match.
-//Any level works, as long as it’s the same level every cycle. Rising crossing to rising crossing is exactly one period regardless.
-//low_gate is hysteresis. A crossing only counts if the signal dipped below 3/8 since the last one. Noise wobbling around the midpoint can’t count as several crossings.
+//----------------------------NOTES-----------------------------------
+//N1:Crossing level is the midpoint. It's stored doubled (lo + hi instead of (lo + hi)/2) so no half-count is lost to integer division. Comparisons later are written as 2*a vs level2 to match.
+//Any level works, as long as it's the same level every cycle. Rising crossing to rising crossing is exactly one period regardless.
+//low_gate is hysteresis. A crossing only counts if the signal dipped below 3/8 since the last one. Noise wobbling around the midpoint can't count as several crossings.
+//
+//N2:whole_cycle_range is the one place the whole-cycle window is worked out. The offset, RMS and power all call it,
+//so they always agree on which samples count. Averaging over whole cycles means every high has a matching low,
+//so the AC part cancels and only the true DC (or true power) is left.
+//
+//N3:I_SIGN comes from I_CHANNEL_INVERTED in calibration.h. The current diff amp output is upside down relative to
+//the load current, so every centred current is multiplied by I_SIGN. Power, the waveform current and the
+//instantaneous power then all come out the right way up. RMS and peak square or abs the value, so they don't need it.
+//
+//N4:Peak current used to be the single biggest sample, so one noise spike set it. Now each whole cycle gets its own
+//biggest |x| and those are averaged. Cycle c runs from first + c x (span / cycles) to the start of the next.
+//
+//N5:Dividing sum_xy by n x 100 instead of n x 10000 keeps two decimals of counts^2.
+//That is why the final divide is by 10^6 (x100 from here times x10000 from P_MW_PER_COUNT2_X10000).
+//
+//N6:With PF near 1, rounding and noise can push P a hair above S. Up to 2% over is treated as PF = 1.000.
+//More than that means something is genuinely wrong, so -1 (unavailable) is still returned.

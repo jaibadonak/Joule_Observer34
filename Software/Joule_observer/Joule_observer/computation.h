@@ -65,13 +65,6 @@ uint32_t capture_stats_rms(const capture_stats_t *stats);
 void     energy_add(uint32_t power_mW, uint32_t dt_ticks);
 uint32_t energy_mWh(void);
 
-uint32_t adc_cycle_offset_x100(volatile uint16_t *block);
-uint16_t adc_rms_counts_x10(volatile uint16_t *block); // raw AC RMS before gain calibration
-uint16_t adc_rms_counts_x100(volatile uint16_t *block); // rounded hundredths of a count
-
-// Start Timer1 (free running). Read the time with TCNT1.
-void calcs_init(void);
-uint32_t calcs_ticks(void); // atomic extended Timer1 snapshot, handles pending overflow
 
 
 #endif /* COMPUTATION_H_ */

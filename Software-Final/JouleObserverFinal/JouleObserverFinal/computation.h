@@ -81,3 +81,27 @@ uint32_t capture_stats_rms(const capture_stats_t *stats);
 
 
 #endif /* COMPUTATION_H_ */
+
+
+
+//------------------NOTES----------------
+//
+//N1: typedef struct
+//A struct groups related variables (members) into one box.
+//typedef gives that box a type name, here capture_stats_t.
+//The name sits after the closing } because that is where a variable name would normally go.
+//
+//N2: making an instance
+//capture_stats_t v = {0};   // v now has its own minimum, maximum, sum, sum_squares, count
+//capture_stats_t i = {0};   // i gets its own separate set, changing v.sum does not touch i.sum
+//{0} starts every member at zero.
+//
+//N3: passing to a function
+//capture_stats_add(&v, s.voltage_mV);
+//&v sends the address of v, so the function edits the real v (no copy).
+//s.voltage_mV sends a copy of one number, the function cannot change s.
+//Inside the function stats->sum means "the sum member of the struct this pointer points to".
+//
+//N4: 
+//Without the struct, tracking V, I and P needs 15 loose variables and 6 arguments per call.
+//With it, 3 variables and 2 arguments, and members cannot be mixed up between signals.

@@ -13,14 +13,24 @@ void    adc_start_capture(void);        // main: ask for a new V + I capture
 void    adc_trigger(void);              // call from ISR(INT0_vect): "voltage zero crossing just happened"
 uint8_t adc_capture_done(void);         // main: 1 once V and I are both captured
 
-typedef struct {		//	Typedef Strut is a more clear and readable way to store variables. 
-	uint16_t position;	//	All of the variable in the adc_status_t are different formats but all relate to the status of ADC.	
-	uint16_t zero_crossings;
-	uint8_t channel, armed, capturing, complete, mux, control;
-} adc_status_t;
+typedef struct adc_status adc_status_t;		//	Typedef Strut is a more clear and readable way to store variables. 
+struct adc_status {
+    uint16_t position;
+    uint16_t zero_crossings;
+    uint8_t  channel, armed, capturing, complete, mux, control;
+};
 void adc_get_status(adc_status_t *status);
 
 extern volatile uint16_t v_samples[samples];
 extern volatile uint16_t i_samples[samples];
 
 #endif /* ADC_H_ */
+
+//-------------------NOTES-------------------\\
+//
+//typedef struct are two different syntaxes combined
+//
+//struct: groups related variables under one name, delcaring one reserves memory for all of them together
+//All of the variable in the adc_status_t are different formats but all relate to the status of ADC.	
+//
+//typedef: a nickname for a type to save typing. allows for easy access of our struc of variables

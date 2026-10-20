@@ -8,6 +8,8 @@
 #define ADC_REFERENCE_MV 4970UL
 #define V_MV_PER_COUNT_X100 10817UL
 #define I_MA_PER_COUNT_X1000 3817UL
+//N3
+#define I_CHANNEL_INVERTED 1   // 1 = current diff amp output is upside down, 0 = not inverted
 //Simple checks for peace of mind
 #if ADC_REFERENCE_MV < 1000 || ADC_REFERENCE_MV > 5500
 #error "ADC reference out of range"
@@ -15,6 +17,9 @@
 //why 60,000? in calc_voltage_rms_mV, rmsx100 is uint16, therefor preventing overflow.
 #if V_MV_PER_COUNT_X100 < 1 || V_MV_PER_COUNT_X100 > 60000 || I_MA_PER_COUNT_X1000 < 1 || I_MA_PER_COUNT_X1000 > 60000
 #error "Calibration gain out of range"
+#endif
+#if I_CHANNEL_INVERTED != 0 && I_CHANNEL_INVERTED != 1
+#error "I_CHANNEL_INVERTED must be 0 or 1"
 #endif
 //N2
 #define P_MW_PER_COUNT2_X10000 ((V_MV_PER_COUNT_X100 * I_MA_PER_COUNT_X1000 + 5000UL) / 10000UL)
@@ -31,3 +36,8 @@
 //therefor needs a bigger scale to keep the same amount of sig figures.
 //
 //N2: the reason for + 5000 and /10000, mV * mA = uW, the x100 and x1000 scale as they multiply, and now are 10^5. Dividing by 10000 gives uWx10 = mW x 10^4
+//
+//N3: the current channel comes out upside down (likely the shunt ends go to the diff amp inputs the other way round).
+//computation.c flips every centred current once using this, so power and the website waveforms are the right way up.
+//If power reads 0 on a working load, this is probably set wrong, flip it to 0.
+//If the shunt wires at the diff amp get swapped in hardware, set this to 0.

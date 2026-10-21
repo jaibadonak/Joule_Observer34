@@ -148,7 +148,8 @@ Apparent power, PF and frequency come from the AVR without an ESP32/browser
 fallback. Frequency uses interpolated voltage rising crossings and ADC timing.
 Energy has a history chart, with no AC waveform.
 
-Raw ADC view preserves DC bias and uses a fixed 0–1023 axis. Capture RMS and
+The scope shows calibrated sample lines or sample points; raw ADC plotting and
+smooth interpolation are removed. Raw telemetry remains for calibration. Capture RMS and
 statistics come from the AVR for the whole capture, independent of zoom.
 Overview RMS also uses the full ADC block, with its own DC-removal method.
 Browser arithmetic remains for drawing, session history and interactive gain

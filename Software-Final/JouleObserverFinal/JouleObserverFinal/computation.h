@@ -60,6 +60,24 @@ uint32_t calc_apparent_power_mVA(uint32_t voltage_mV, uint32_t current_mA_x100);
 int16_t calc_power_factor_x1000(uint32_t power_mW, uint32_t apparent_mVA); // -1 unavailable
 uint32_t calc_frequency_mHz(void); // 0 unavailable
 
+//---------------------------- Waveform and capture statistics ----------------------------//
+typedef struct {
+    int32_t voltage_mV, current_mA, power_mW;
+} waveform_sample_t;
+
+typedef struct {
+    int32_t minimum, maximum;
+    int64_t sum;
+    uint64_t sum_squares;
+    uint16_t count;
+} capture_stats_t;
+
+void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
+                          waveform_sample_t *value);
+void capture_stats_add(capture_stats_t *stats, int32_t value);
+int32_t capture_stats_mean(const capture_stats_t *stats);
+uint32_t capture_stats_rms(const capture_stats_t *stats);
+
 //---------------------------- 8. Energy ----------------------------//
 // Add power_mW for dt_ticks Timer1 ticks, read the total in mWh
 void     energy_add(uint32_t power_mW, uint32_t dt_ticks);

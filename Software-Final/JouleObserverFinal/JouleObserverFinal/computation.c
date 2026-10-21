@@ -283,6 +283,50 @@ uint32_t calc_frequency_mHz(void) {
 
 
 
+//============================ WAVEFORM ============================//
+// Round signed results to the nearest integer. Negative samples round the same way as positive ones.
+static int32_t round_divide(int64_t value, int32_t divisor) {
+    if (value < 0) value -= divisor / 2;
+    else value += divisor / 2;
+    return value / divisor;
+}
+
+void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
+                          waveform_sample_t *value) {
+    // Step 1. remove DC, keeping hundredths of an ADC count.
+    int32_t voltage = (int32_t)v_samples[index] * 100L - (int32_t)voltage_dc;
+    int32_t current = (int32_t)i_samples[index] * 100L - (int32_t)current_dc;
+    current *= I_SIGN;
+
+    // Step 2. apply the gains. x100 counts times x100 or x1000 gain.
+    value->voltage_mV = round_divide((int64_t)voltage * V_MV_PER_COUNT_X100, 10000L);
+    value->current_mA = round_divide((int64_t)current * I_MA_PER_COUNT_X1000, 100000L);
+
+    // Step 3. power from the unrounded counts, so small currents keep their precision.
+    // x100 voltage times x100 current times x10000 gain = x100000000.
+    int64_t power = (int64_t)voltage * current * P_MW_PER_COUNT2_X10000;
+    value->power_mW = round_divide(power, 100000000L);
+}
+
+// Add each sample as it is sent, without storing another waveform on the AVR.
+void capture_stats_add(capture_stats_t *stats, int32_t value) {
+    if (stats->count == 0 || value < stats->minimum) stats->minimum = value;
+    if (stats->count == 0 || value > stats->maximum) stats->maximum = value;
+    stats->sum += value;
+    stats->sum_squares += (int64_t)value * value;
+    stats->count++;
+}
+
+int32_t capture_stats_mean(const capture_stats_t *stats) {
+    if (stats->count == 0) return 0;
+    return round_divide(stats->sum, stats->count);
+}
+
+uint32_t capture_stats_rms(const capture_stats_t *stats) {
+    if (stats->count == 0) return 0;
+    return square_root_64(stats->sum_squares / stats->count);
+}
+
 //============================ 8. ENERGY ============================//
 //      E = P x time. Builds up in mW x ticks, and every TICKS_PER_MWH adds 1 mWh.
 void energy_add(uint32_t power_mW, uint32_t dt_ticks) {

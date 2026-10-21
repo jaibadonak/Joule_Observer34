@@ -7,7 +7,7 @@ The page is offline-capable: no external fonts, scripts, chart libraries or CDN.
 
 - RMS voltage/current, real power, and AVR energy total.
 - History for every reading, session min/max, apparent power and power factor.
-- Actual voltage/current captures, raw ADC count view (DC bias retained),
+- Actual voltage/current captures with sample lines or sample points,
   V/I overlay, AVR-calculated instantaneous power,
   time-window controls, pause, keyboard/sample inspection and CSV history export.
 - Separate measurement and waveform freshness, UART error counters, display mode.
@@ -47,10 +47,10 @@ is needed. Rebuild/upload after changing the page.
 
 Build and flash the AVR too for waveform, energy and calibration telemetry:
 
-    ./Software/build-and-test.ps1
+    ./Software-Final/build-and-test.ps1
 
 Normal AVR output:
-Software/Joule_observer/Joule_observer/Debug/Joule_observer.hex
+Software-Final/JouleObserverFinal/JouleObserverFinal/Debug/JouleObserverFinal.hex
 
 The independent display-test.hex build remains available. Existing AVR firmware
 sending three-field $M packets still works; energy, waveforms and calibration
@@ -73,13 +73,13 @@ estimates, CSV logging and gzip delivery. Our ADC uses an interrupt-driven
 capture and a preemptible display scan; its timing is checked separately.
 See docs/spec.md for exact packet formats and limitations.
 
-## Raw ADC waveform
+## Waveform viewer
 
-Select Voltage or Current, choose Waveform, then select Raw ADC counts.
-This shows the original 0–1023 samples, not a reconstructed signal. Both AVR
-and ESP32 must be updated together for the calculated capture protocol.
-Capture statistics cover the full capture, independent of zoom. Apparent power,
-power factor and frequency are also calculated on the AVR. Full captures take
-several seconds at 9600 baud.
+Select Voltage, Current or Power, then Waveform. Choose sample lines or sample
+points, adjust the time window, or overlay voltage/current. Smooth interpolation
+and raw ADC plotting are removed. Capture statistics cover the full capture,
+independent of zoom. Raw calibration telemetry remains in the Calibration panel.
+Voltage frequency, last-reading age and local-display mode are no longer shown
+on the dashboard. Freshness checking still identifies stale measurements.
 
 Specification verification: see [the audit](docs/specification-audit.md).

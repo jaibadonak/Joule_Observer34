@@ -77,9 +77,8 @@ also limited by telemetry/capture cadence.
 
 - RMS trend: full-block AVR summaries over time; it follows changing loads.
 - Calibrated waveform: all 200 original sample positions after complete-cycle DC-bias removal (block-mean fallback when cycles
-  cannot be resolved) and gain scaling. Smooth interpolation passes through samples without introducing
-  extra extrema. It affects drawing only; statistics and cursor remain original.
-- Raw ADC counts: original 0-1023 codes, including DC bias, drawn as ADC steps.
+  cannot be resolved) and gain scaling. Sample lines and sample points use the original values.
+- Raw ADC waveform plotting is removed; the calibration table retains raw statistics.
 - Sample markers, time windows, pause and keyboard/sample inspection are available.
 - RMS guides and capture statistics come from the AVR for the full capture,
   independent of zoom. Raw RMS includes DC, while the calibration table's AC RMS

@@ -26,7 +26,7 @@ extern volatile uint16_t i_samples[samples];
 
 #endif /* ADC_H_ */
 
-//-------------------NOTES-------------------\\
+//-------------------NOTES-------------------
 //
 //typedef struct are two different syntaxes combined
 //

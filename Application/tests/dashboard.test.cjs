@@ -55,7 +55,8 @@ context.packet=packet;
 vm.runInContext('accept(packet); accept(packet)',context);
 assert.equal(vm.runInContext('history.length',context),2);
 assert.equal(element('irms').textContent,'0');
-assert.equal(element('frequency').textContent,'— Hz');
+assert.doesNotMatch(html,/id="(?:frequency|age|display-mode|signal-scale)"/);
+assert.doesNotMatch(html,/Smooth interpolation|Raw ADC counts|ADC steps/);
 assert.equal(element('download-calibration').disabled,true); // requires a reference and 8 unique captures
 assert.equal(vm.runInContext('calibrationRows.length',context),1); // duplicate polls excluded
 element('cal-voltage').value='13.7';
@@ -81,31 +82,17 @@ vm.runInContext("channel='e';draw();",context);
 assert.equal(element('view-wave').disabled,true);
 console.log('Dashboard math, protocol states, calibration and history tests passed.');
 
-// The raw view uses actual unmodified ADC values, retains bias and disables overlay.
+// Calibrated signed traces and transmitted full-capture statistics remain available.
 context.packet={...packet,sequence:53,epoch:2,dt_us:104,wave_age_ms:0,
-  v_mV:[-19339,0,19339],i_mA:[-566,0,566],p_mW:[10946,0,10946],v_adc:[245,422,599],i_adc:[276,422,568],capture_stats:[[-19339,19339,0,15790],[-566,566,0,462],[0,10946,7297,8937],[245,599,422,446],[276,568,422,438]]};
-vm.runInContext("accept(packet); channel='v';view='wave';",context);
-element('signal-scale').value='raw';
-element('overlay').checked=true;
-element('signal-scale').events.change();
-assert.equal(vm.runInContext('chartData().values.join()',context),'245,422,599');
-assert.equal(element('stat-1').textContent,'245 counts');
-assert.equal(element('stat-label-3').textContent,'RMS (includes DC)');
-assert.equal(element('overlay').disabled,true);
-assert.match(element('capture-note').textContent,/DC offset retained/);
-vm.runInContext("channel='i';draw()",context);
-assert.equal(element('stat-1').textContent,'276 counts');
-element('signal-scale').value='scaled';element('overlay').checked=false;
-element('signal-scale').events.change();
-assert.equal(element('stat-1').textContent,'-566 mA');
+  v_mV:[-19339,0,19339],i_mA:[-566,0,566],p_mW:[10946,0,10946],capture_stats:[[-19339,19339,0,15790],[-566,566,0,462],[0,10946,7297,8937]]};
+vm.runInContext("accept(packet); channel='v';view='wave';draw();",context);
+assert.equal(vm.runInContext('chartData().values.join()',context),'-19.339,0,19.339');
 assert.equal(element('stat-label-3').textContent,'Capture RMS');
-context.packet={...context.packet,v_adc:[],i_adc:[]};
-vm.runInContext('accept(packet)',context);
-element('signal-scale').value='raw';element('signal-scale').events.change();
-assert.equal(element('stat-1').textContent,'—');
-assert.match(element('capture-note').textContent,/updated AVR and ESP32/);
-assert.equal(j.rawWave({dt_us:104,v_mV:[-1,1],i_mA:[0,0],v_adc:[0,1024],i_adc:[360,360]}),false);
-console.log('Signed waveform and raw ADC view tests passed.');
+vm.runInContext("channel='i';draw()",context);
+assert.equal(element('stat-1').textContent,'-566 mA');
+vm.runInContext("channel='p';draw()",context);
+assert.equal(vm.runInContext('chartData().values.join()',context),'10.946,0,10.946');
+console.log('Calibrated voltage, current and power waveform tests passed.');
 
 // RMS definitions, averaged variance, stable-reference gating and multipoint fitting.
 assert.equal(j.stats([359,361]).acRms,1);
@@ -116,11 +103,6 @@ assert.ok(average.spread.v<1);
 const fit=j.fitCalibration([{v:{raw:50,ref:5.5}},{v:{raw:100,ref:11}},{v:{raw:150,ref:16.5}}],{vref:5000,v:10926,i:3877});
 assert.equal(fit.cfg.v,11000);assert.equal(fit.cfg.i,3877);assert.equal(fit.errors.length,0);
 assert.ok(j.fitCalibration([{v:{raw:50,ref:5}},{v:{raw:100,ref:15}}],fit.cfg).errors.length>0);
-for(const values of [[0,5,-5,2],[360,360,360],[0,1,2,10,11],[10,0]]){
- const curve=j.curve(values);
- for(let k=0;k<values.length;k++)assert.equal(curve[k*8][1],values[k]);
- for(const [x,y] of curve){const k=Math.min(values.length-2,Math.floor(x));assert.ok(y>=Math.min(values[k],values[k+1])-1e-10&&y<=Math.max(values[k],values[k+1])+1e-10);}
-}
 // Fresh captures after a reset; unstable voltage blocks its calibration only.
 context.packet={...packet,epoch:3,calibration:{...calibration,sequence:100}};
 element('cal-voltage').value='13.7';element('cal-current').value='';
@@ -138,13 +120,12 @@ assert.equal(element('download-calibration').disabled,false);
 context.packet={...context.packet,calibration:{...context.packet.calibration,voltage_scale_x100:11000,sequence:200}};
 vm.runInContext('accept(packet)',context);
 assert.equal(vm.runInContext('calibrationPoints.length',context),0);
-console.log('Precision RMS, calibration stability, multipoint and interpolation tests passed.');
+console.log('Precision RMS, calibration stability, multipoint tests passed.');
 
 assert.match(html,/id="current-peak"/);
 context.packet={...packet,epoch:4,sequence:300,display_mode:1,ipeak_mA:566};
 vm.runInContext('accept(packet)',context);
 assert.equal(element('current-peak').textContent,'Peak 566 mA');
-assert.equal(element('display-mode').textContent,'Current peak (mA)');
 context.packet={...context.packet,ipeak_mA:null};vm.runInContext('accept(packet)',context);
 assert.equal(element('current-peak').textContent,'Peak — mA');
 assert.equal(j.valid({...packet,ipeak_mA:-1}),false);
@@ -154,5 +135,4 @@ context.packet={...packet,epoch:5,sequence:301,apparent_mVA:6400,power_factor_x1
 vm.runInContext('accept(packet)',context);
 assert.equal(element('apparent').textContent,'6.40 VA');
 assert.equal(element('pf').textContent,'0.57');
-assert.equal(element('frequency').textContent,'499.3 Hz');
 console.log('AVR-only live measurement display tests passed.');

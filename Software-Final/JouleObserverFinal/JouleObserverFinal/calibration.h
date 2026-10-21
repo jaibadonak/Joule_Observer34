@@ -9,7 +9,7 @@
 #define V_MV_PER_COUNT_X100 10817UL
 #define I_MA_PER_COUNT_X1000 3817UL
 //N3
-#define I_CHANNEL_INVERTED 1   // 1 = current diff amp output is upside down, 0 = not inverted
+#define I_CHANNEL_INVERTED 0   // 1 = current diff amp output is upside down, 0 = not inverted
 //Simple checks for peace of mind
 #if ADC_REFERENCE_MV < 1000 || ADC_REFERENCE_MV > 5500
 #error "ADC reference out of range"

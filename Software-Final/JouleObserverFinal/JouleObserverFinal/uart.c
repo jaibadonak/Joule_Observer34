@@ -156,18 +156,22 @@ void uart_send_measurements(int32_t vrms_mV,
 // A begin/sample/stats/end stream keeps each line short and readable.
 // No second waveform buffer is needed on the 2 KB AVR.
 void uart_send_waveform(void) {
+    // Work out each channel's DC level once, then use it for all samples in this capture.
     uint32_t voltage_dc = adc_cycle_offset_x100(v_samples);
     uint32_t current_dc = adc_cycle_offset_x100(i_samples);
     capture_stats_t stats[5] = {{0}}; // V, I, P, raw V, raw I
     uart_string("$B,"); uart_int32(ADC_SAMPLE_US);
     uart_transmit(','); uart_int32(samples); uart_string("\r\n");
-    uint8_t last_mode = 255;
+    uint8_t last_mode = 255; // outside the valid modes, so the first mode is always sent
+    // Send one row per sample position, using the same index for voltage and current.
     for (uint16_t k = 0; k < samples; k++) {
-        waveform_sample_t value;
+        waveform_sample_t value; // groups the calculated voltage, current and power together
+        // &value passes its address so the function can fill in these three fields.
         calc_waveform_sample(k, voltage_dc, current_dc, &value);
         int32_t values[5] = {value.voltage_mV, value.current_mA, value.power_mW,
                             v_samples[k], i_samples[k]};
         uart_string("$S,"); uart_int32(k);
+        // Send all five values for this position and update their statistics.
         for (uint8_t channel = 0; channel < 5; channel++) {
             capture_stats_add(&stats[channel], values[channel]);
             uart_transmit(','); uart_int32(values[channel]);
@@ -177,6 +181,7 @@ void uart_send_waveform(void) {
         uint8_t mode = display_current_quantity();
         if (mode != last_mode) { uart_send_mode(mode); last_mode = mode; }
     }
+    // After all samples, send min, max, mean and RMS for each of the five channels.
     for (uint8_t channel = 0; channel < 5; channel++) {
         uart_string("$G,"); uart_int32(channel);
         uart_transmit(','); uart_int32(stats[channel].minimum);
@@ -185,9 +190,10 @@ void uart_send_waveform(void) {
         uart_transmit(','); uart_int32(capture_stats_rms(&stats[channel]));
         uart_string("\r\n");
     }
-    uart_string("$E\r\n");
+    uart_string("$E\r\n"); // end marker: ESP32 can now publish the complete capture
 }
 
+// Find raw ADC statistics for one channel and append them to the calibration packet.
 static void uart_calibration_channel(volatile uint16_t *block) {
     uint16_t lo = 1023, hi = 0;
     uint32_t total = 0;
@@ -203,6 +209,7 @@ static void uart_calibration_channel(volatile uint16_t *block) {
     uart_transmit(','); uart_int32(adc_rms_counts_x10(block));
 }
 
+// Send gain settings and raw statistics used by the website's calibration panel.
 void uart_send_calibration(void) {
     uart_string("$C,"); uart_int32(ADC_REFERENCE_MV);
     uart_transmit(','); uart_int32(V_MV_PER_COUNT_X100);
@@ -214,15 +221,18 @@ void uart_send_calibration(void) {
     uart_string("\r\n");
 }
 
+// Send the local display's selected measurement as a digit, 0 to 3.
 void uart_send_mode(uint8_t mode) {
     if (mode >= 4) return;
     uart_string("$D,");
-    uart_transmit('0' + mode);
+    uart_transmit('0' + mode); // turn a number such as 2 into its printable character '2'
     uart_string("\r\n");
 }
 
 // USB serial diagnostics are sent through the ESP32.
+// block points to either v_samples or i_samples; name labels the printed line.
 static void send_raw_stats(const char *name, volatile uint16_t *block) {
+    // Start at opposite ends of the 10-bit range so the first sample replaces both limits.
     uint16_t lo = 1023, hi = 0;
     uint32_t total = 0;
     for (uint16_t k = 0; k < samples; k++) {
@@ -234,12 +244,16 @@ static void send_raw_stats(const char *name, volatile uint16_t *block) {
     uart_string(name);
     uart_string(" raw: min "); uart_int32(lo);
     uart_string(" max "); uart_int32(hi);
-    uart_string(" avg "); uart_int32(total / samples);
-    uart_string(" span "); uart_int32(hi - lo);
+    uart_string(" avg "); uart_int32(total / samples); // total divided by count is the average
+    uart_string(" span "); uart_int32(hi - lo); // highest minus lowest is the peak-to-peak span
     uart_string("\r\n");
 }
 
+// Print the saved ADC state to help find why a capture did not finish.
+// s points to the saved struct. s->channel means its channel field.
 void uart_send_timeout_status(const adc_status_t *s) {
+    // ch: channel, pos: samples stored, armed: waiting for an edge, active: sampling now.
+    // zc: edges counted; mux and ctrl: saved ADMUX and ADCSRA register values.
     uart_string("ADC timeout: ch="); uart_int32(s->channel);
     uart_string(" pos="); uart_int32(s->position);
     uart_string(" armed="); uart_int32(s->armed);
@@ -250,6 +264,7 @@ void uart_send_timeout_status(const adc_status_t *s) {
     uart_string("\r\n");
 }
 
+// Print both channels plus the precise RMS current, after the capture has finished.
 void uart_send_capture_diagnostics(uint32_t current_mA_x100) {
     send_raw_stats("V", v_samples);
     send_raw_stats("I", i_samples);

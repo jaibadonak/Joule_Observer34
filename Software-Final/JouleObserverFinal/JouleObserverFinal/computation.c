@@ -286,19 +286,23 @@ uint32_t calc_frequency_mHz(void) {
 //============================ WAVEFORM ============================//
 // Round signed results to the nearest integer. Negative samples round the same way as positive ones.
 static int32_t round_divide(int64_t value, int32_t divisor) {
+    // Add half a divisor before dividing; subtract it for negatives because division truncates to zero.
     if (value < 0) value -= divisor / 2;
     else value += divisor / 2;
     return value / divisor;
 }
 
+// Calculate one waveform position, with index selecting the stored ADC sample.
+// value points to the caller's struct; -> writes a result into one of its fields.
 void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_dc,
                           waveform_sample_t *value) {
     // Step 1. remove DC, keeping hundredths of an ADC count.
     int32_t voltage = (int32_t)v_samples[index] * 100L - (int32_t)voltage_dc;
     int32_t current = (int32_t)i_samples[index] * 100L - (int32_t)current_dc;
-    current *= I_SIGN;
+    current *= I_SIGN; // +1 keeps the direction; -1 flips it if sensor wiring is inverted
 
     // Step 2. apply the gains. x100 counts times x100 or x1000 gain.
+    // Cast to int64_t before multiplying to keep the intermediate result from overflowing 32 bits.
     value->voltage_mV = round_divide((int64_t)voltage * V_MV_PER_COUNT_X100, 10000L);
     value->current_mA = round_divide((int64_t)current * I_MA_PER_COUNT_X1000, 100000L);
 
@@ -310,18 +314,22 @@ void calc_waveform_sample(uint16_t index, uint32_t voltage_dc, uint32_t current_
 
 // Add each sample as it is sent, without storing another waveform on the AVR.
 void capture_stats_add(capture_stats_t *stats, int32_t value) {
+    // The first sample sets both limits; later samples replace a limit only if they pass it.
     if (stats->count == 0 || value < stats->minimum) stats->minimum = value;
     if (stats->count == 0 || value > stats->maximum) stats->maximum = value;
-    stats->sum += value;
-    stats->sum_squares += (int64_t)value * value;
-    stats->count++;
+    stats->sum += value; // keep a running total for the mean
+    stats->sum_squares += (int64_t)value * value; // square each sample for RMS
+    stats->count++; // remember how many samples are included
 }
 
+// Mean is the total divided by sample count, rounded to the nearest integer.
 int32_t capture_stats_mean(const capture_stats_t *stats) {
     if (stats->count == 0) return 0;
     return round_divide(stats->sum, stats->count);
 }
 
+// RMS means square each sample, take the mean, then take the square root.
+// Raw ADC RMS includes DC bias because these raw samples still contain it.
 uint32_t capture_stats_rms(const capture_stats_t *stats) {
     if (stats->count == 0) return 0;
     return square_root_64(stats->sum_squares / stats->count);

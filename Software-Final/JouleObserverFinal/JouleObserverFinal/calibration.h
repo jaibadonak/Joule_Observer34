@@ -6,7 +6,7 @@
 //Since for current Rs= 0.54ohms and G_O = 68/27
 //N1
 #define ADC_REFERENCE_MV 4970UL
-#define V_MV_PER_COUNT_X100 10817UL
+#define V_MV_PER_COUNT_X100 10785UL
 #define I_MA_PER_COUNT_X1000 3817UL
 //N3
 #define I_CHANNEL_INVERTED 0   // 1 = current diff amp output is upside down, 0 = not inverted

@@ -3,22 +3,28 @@
 #include <avr/interrupt.h>
 #include <math.h>
 #include "../JouleObserverFinal/JouleObserverFinal/calibration.h"
+// The build script runs this test again with the current direction flipped.
+// Only this test changes the setting; calibration.h is left untouched.
 #ifdef TEST_INVERT_CURRENT
 #undef I_CHANNEL_INVERTED
 #define I_CHANNEL_INVERTED 1
 #endif
 #undef ISR
+// Turn interrupt handlers into ordinary functions inside the simulator test.
 #define ISR(vector, ...) void vector(void)
 #include "../JouleObserverFinal/JouleObserverFinal/computation.c"
 
+// Test inputs take the place of samples normally collected by adc.c.
 volatile uint16_t v_samples[samples], i_samples[samples];
 volatile uint16_t test_failures = 0;
 volatile uint16_t failure_lines[16];
 #define CHECK(condition) do { if (!(condition)) { if (test_failures < 16) failure_lines[test_failures] = __LINE__; test_failures++; } } while (0)
 
+// The debugger stops here to read the failure count; nop is a do-nothing instruction.
 void __attribute__((noinline)) test_finished(void) { __asm__ __volatile__("nop"); }
 
 int main(void) {
+    // Use two known numbers to check the running statistics against known answers.
     capture_stats_t stats = {0};
     capture_stats_add(&stats, -3000);
     capture_stats_add(&stats, 4000);
@@ -28,6 +34,7 @@ int main(void) {
     // Fractional DC offsets, both signs and the whole 10-bit input range.
     // Floating-point references are independent of the production fixed-point rounding.
     for (uint16_t raw = 0; raw <= 1023; raw += 3) {
+        // Try low/high and positive/negative samples, with fractional DC offsets.
         v_samples[0] = raw;
         i_samples[0] = 1023 - raw;
         waveform_sample_t result;
@@ -41,6 +48,7 @@ int main(void) {
 
     // Stable 500 Hz sine, with an inductive lag. Exercise the unchanged cycle/RMS/power code.
     for (uint16_t k = 0; k < samples; k++) {
+        // Generate each point in time. The current lags voltage by 0.6 radians.
         double phase = 6.283185307 * 500 * k * 0.000104;
         v_samples[k] = 422 + lround(180 * sin(phase));
         i_samples[k] = 418 + lround(I_SIGN * 120 * sin(phase - 0.6));

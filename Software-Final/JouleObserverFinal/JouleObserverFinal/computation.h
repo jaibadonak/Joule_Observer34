@@ -61,10 +61,12 @@ int16_t calc_power_factor_x1000(uint32_t power_mW, uint32_t apparent_mVA); // -1
 uint32_t calc_frequency_mHz(void); // 0 unavailable
 
 //---------------------------- Waveform and capture statistics ----------------------------//
+// A struct keeps related values together, so one function can return all three results.
 typedef struct {
     int32_t voltage_mV, current_mA, power_mW;
 } waveform_sample_t;
 
+// Running totals let us find statistics without storing another array of samples.
 typedef struct {
     int32_t minimum, maximum;
     int64_t sum;

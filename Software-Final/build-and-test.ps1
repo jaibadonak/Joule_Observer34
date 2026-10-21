@@ -10,12 +10,15 @@ try {
     New-Item -ItemType Directory -Force "$project/Debug", 'tests/Debug' | Out-Null
     $sources = Get-ChildItem "$project/*.c" | ForEach-Object FullName
     $options = @('-mmcu=atmega328pb', "-B$DevicePack/gcc/dev/atmega328pb/",
-                 "-I$DevicePack/include", '-DF_CPU=2000000UL', '-Os', '-Wall',
+                 "-I$DevicePack/include", "-I$project", '-DF_CPU=2000000UL', '-Os', '-Wall',
                  '-Wextra', '-Werror', '-std=gnu99')
     foreach ($build in @('JouleObserverFinal', 'display-test')) {
-        [string[]]$extra = @()
-        if ($build -eq 'display-test') { $extra = @('-DDISPLAY_SELF_TEST') }
-        & "$Toolchain/avr-gcc.exe" @options @extra @sources -o "$project/Debug/$build.elf"
+        $buildSources = $sources
+        if ($build -eq 'display-test') {
+            $buildSources = @($sources | Where-Object { (Split-Path $_ -Leaf) -ne 'main.c' })
+            $buildSources += 'tests/display-test.c'
+        }
+        & "$Toolchain/avr-gcc.exe" @options @buildSources -o "$project/Debug/$build.elf"
         if ($LASTEXITCODE) { throw "$build compilation failed" }
         & "$Toolchain/avr-objcopy.exe" -O ihex -R .eeprom "$project/Debug/$build.elf" "$project/Debug/$build.hex"
         if ($LASTEXITCODE) { throw "$build HEX generation failed" }

@@ -10,6 +10,7 @@
 #define UART_H_  
 
 #include <stdint.h> 
+#include "adc.h"
 
 // Initialise the UART hardware
 void uart_init(void);
@@ -36,6 +37,10 @@ void uart_send_measurements(int32_t vrms_mV,
 // Full capture: $B begin, $S calculated/raw samples, $G statistics, $E end.
 void uart_send_waveform(void);
 void uart_send_calibration(void);
+
+// Raw channel and timeout information for the USB serial monitor.
+void uart_send_capture_diagnostics(uint32_t current_mA_x100);
+void uart_send_timeout_status(const adc_status_t *status);
 
 // Display mode: 0=voltage, 1=current, 2=power, 3=energy.
 void uart_send_mode(uint8_t mode);

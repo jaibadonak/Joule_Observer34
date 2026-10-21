@@ -11,6 +11,8 @@ Build and check from the repository root:
 
 Normal firmware: `JouleObserverFinal/JouleObserverFinal/Debug/JouleObserverFinal.hex`.
 The separate `display-test.hex` retains the fixed 13.7U / 566A / 5.48P display test.
+Its entry point is `tests/display-test.c`; normal `main.c` needs no test switches.
+`int0.c` handles the zero crossing interrupt, and `uart.c` handles serial diagnostics.
 The script compiles both builds, checks ADC interrupt timing and simulates
 calculation tests for both current polarities. It does not flash either controller.
 

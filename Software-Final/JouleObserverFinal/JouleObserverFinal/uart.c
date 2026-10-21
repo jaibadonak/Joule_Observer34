@@ -220,3 +220,39 @@ void uart_send_mode(uint8_t mode) {
     uart_transmit('0' + mode);
     uart_string("\r\n");
 }
+
+// USB serial diagnostics are sent through the ESP32.
+static void send_raw_stats(const char *name, volatile uint16_t *block) {
+    uint16_t lo = 1023, hi = 0;
+    uint32_t total = 0;
+    for (uint16_t k = 0; k < samples; k++) {
+        uint16_t value = block[k];
+        if (value < lo) lo = value;
+        if (value > hi) hi = value;
+        total += value;
+    }
+    uart_string(name);
+    uart_string(" raw: min "); uart_int32(lo);
+    uart_string(" max "); uart_int32(hi);
+    uart_string(" avg "); uart_int32(total / samples);
+    uart_string(" span "); uart_int32(hi - lo);
+    uart_string("\r\n");
+}
+
+void uart_send_timeout_status(const adc_status_t *s) {
+    uart_string("ADC timeout: ch="); uart_int32(s->channel);
+    uart_string(" pos="); uart_int32(s->position);
+    uart_string(" armed="); uart_int32(s->armed);
+    uart_string(" active="); uart_int32(s->capturing);
+    uart_string(" zc="); uart_int32(s->zero_crossings);
+    uart_string(" mux="); uart_int32(s->mux);
+    uart_string(" ctrl="); uart_int32(s->control);
+    uart_string("\r\n");
+}
+
+void uart_send_capture_diagnostics(uint32_t current_mA_x100) {
+    send_raw_stats("V", v_samples);
+    send_raw_stats("I", i_samples);
+    uart_string("I rms_mA_x100: "); uart_int32(current_mA_x100);
+    uart_string("\r\n");
+}

@@ -65,7 +65,8 @@ void uart_string(const char *str)
 }
 
 
-
+//it turns a number into text and sends it over UART. 
+//The UART can only send characters, so 467 has to go out as '4' '6' '7'.
 void uart_int32(int32_t value)
 {
     // Temporary storage for the decimal digits.
